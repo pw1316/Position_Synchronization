@@ -20,14 +20,11 @@
 
 #include "util.h"
 
-int main(){
-    return 0;
-}
-/*
-PositionPackage pkg;
+package pkg;
 pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
 pthread_t tid, disptid;
-
+int user;
+/*
 void on_read(struct bufferevent *bev, void *arg){
     struct evbuffer *input = bufferevent_get_input(bev);
     char buf[MAXLEN];
@@ -50,9 +47,11 @@ void on_read(struct bufferevent *bev, void *arg){
     pkg = acpkg;
     //pkg_print(pkg);
     pthread_mutex_unlock(&mtx);
-}
+}*/
 
 void on_event(struct bufferevent *bev, short event, void *arg){
+    struct evbuffer *output = bufferevent_get_output(bev);
+    char buf[MAXLEN];
     printf("event begin:%d\n", event);
     if(event & BEV_EVENT_READING){
         printf("Read?\n");
@@ -74,9 +73,13 @@ void on_event(struct bufferevent *bev, short event, void *arg){
     }
     if(event & BEV_EVENT_CONNECTED){
         printf("Connected.\n");
+        buf[0] = 0x80;
+        buf[1] = user & 0xFF;
+        *((package *)(&buf[2])) = pkg;
+        evbuffer_add(output, buf, sizeof(pkg) + 2);
     }
 }
-
+/*
 void *SendingThread(void *arg){
     int kbdfd;
     struct input_event event;
@@ -119,15 +122,15 @@ void *SendingThread(void *arg){
             }
         }
     }
-}
+}*/
 
 void display(){
     int x, y;
     glClear(GL_COLOR_BUFFER_BIT);       
     glColor3f(1.0, 0, 0);
     pthread_mutex_lock(&mtx);
-    x = pkg.x;
-    y = pkg.y;
+    x = pkg.position.x;
+    y = pkg.position.y;
     pthread_mutex_unlock(&mtx);
     glBegin(GL_TRIANGLE_FAN);
     glVertex3f(x + 2, y + 2, 0);
@@ -150,7 +153,7 @@ void reshape(int w, int h){
 }
 
 void *RenderThread(void *arg){
-    glutCreateWindow("OpenGL 3D View");
+    glutCreateWindow("Client");
     glClearColor(0.0, 0.0, 0.0, 0.0);
     glMatrixMode(GL_PROJECTION);
     glOrtho(-200, 200, -200, 200, 5, 15);
@@ -170,12 +173,13 @@ int main(int argc,char* argv[]){
 	struct sockaddr_in sin;
 	char recbuf[100];
 
-    if(argc != 2){
-        printf("usage: %s <host>\n", argv[0]);
+    if(argc != 3){
+        printf("usage: %s <host> <0-1>\n", argv[0]);
         return 1;
     }
+    user = strtol(argv[2], NULL, 10);
 
-    /*GL init*//*
+    /*GL init*/
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_RGB | GLUT_SINGLE);
     glutInitWindowPosition(100, 100);
@@ -186,11 +190,10 @@ int main(int argc,char* argv[]){
         printf("Get base failed!\n");
         return 1;
     }
-    //dns_base = evdns_base_new(base, 1);
 
     memset(&sin, 0, sizeof(sin));
     sin.sin_family = AF_INET;
-    sin.sin_port = htons(6666);
+    sin.sin_port = htons(LISTEN_PORT);
     res = inet_pton(AF_INET, argv[1], &sin.sin_addr);
     if(res <= 0){
         printf("Addr failed!\n");
@@ -203,7 +206,7 @@ int main(int argc,char* argv[]){
         return 1;
     }
 
-    pthread_create(&tid, NULL, SendingThread, bev);
+    //pthread_create(&tid, NULL, SendingThread, bev);
     pthread_create(&disptid, NULL, RenderThread, bev);
     
     fd = bufferevent_socket_connect(bev, (struct sockaddr*)&sin, sizeof(sin));
@@ -213,7 +216,7 @@ int main(int argc,char* argv[]){
         bufferevent_free(bev);
         return 1;
     }
-    bufferevent_setcb(bev, on_read, NULL, on_event, NULL);
+    bufferevent_setcb(bev, NULL, NULL, on_event, NULL);
     bufferevent_enable(bev, EV_READ|EV_WRITE);
     //evbuffer_add_printf(bufferevent_get_output(bev), "GET /\r\n");
     printf("Start polling\n");
@@ -221,4 +224,4 @@ int main(int argc,char* argv[]){
     printf("Stop polling\n");
     pthread_join(tid, NULL);
 	return 0;
-}*/
+}

@@ -66,7 +66,9 @@ void on_read(struct bufferevent *bev, void *arg){
     flag = evbuffer_remove(input, buf, sizeof(buf));
     switch((byte)buf[0]){
     	case 0x80:
-    		;
+    		printf("lalala\n");
+    		bufferevent_free(bev);
+    		break;
     }
     
     pthread_mutex_lock(&mtx);
