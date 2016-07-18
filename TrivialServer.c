@@ -86,6 +86,11 @@ void on_read(struct bufferevent *bev, void *arg){
     		ptr = (package *)&buf[2];
     		pkg[user].velocity.x = ptr->velocity.x;
     		pkg[user].velocity.y = ptr->velocity.y;
+#ifdef SERVER_DEBUG
+	printf("GET :\n");
+	printf("  %d:", user);
+	package_print(pkg[user]);
+#endif
     		break;
     }
     pthread_mutex_unlock(&mtx);
@@ -102,6 +107,13 @@ void on_write(struct bufferevent *bev, void *arg){
 	pthread_mutex_lock(&mtx);
 	package_node_dequeue(queue[user << 1], &pkg_in_queue[0]);
 	package_node_dequeue(queue[(user << 1) | 1], &pkg_in_queue[1]);
+#ifdef SERVER_DEBUG
+	printf("SEND:\n");
+	printf("  0:");
+	package_print(pkg_in_queue[0]);
+	printf("  1:");
+	package_print(pkg_in_queue[1]);
+#endif
 	evbuffer_add(output, (char *)pkg_in_queue, sizeof(pkg_in_queue));
 	pthread_mutex_unlock(&mtx);
 }
@@ -213,6 +225,13 @@ int main(){
 		queue[3]->next = NULL;
 	}
 	printf("Read file done.\n");
+#ifdef SERVER_DEBUG
+	printf("Initial Place:\n");
+	printf("0:");
+	package_print(pkg[0]);
+	printf("1:");
+	package_print(pkg[1]);
+#endif
 
 	/*new event base*/
 	base = event_base_new();

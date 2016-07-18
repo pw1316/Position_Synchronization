@@ -4,6 +4,8 @@
 /* ┌ ┐ └ ┘ ├ ┤ ┬ ┴ ┼ */
 
 //#define DEBUG
+//#define SERVER_DEBUG
+//#define CLIENT_DEBUG
 #define LISTEN_PORT 6666
 #define MAXLEN 4096
 

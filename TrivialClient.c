@@ -36,6 +36,13 @@ void on_read(struct bufferevent *bev, void *arg){
     pthread_mutex_lock(&mtx);
     pkg[0] = *((package *)&buf[0]);
     pkg[1] = *((package *)&buf[0] + 1);
+#ifdef CLIENT_DEBUG
+    printf("GET :\n");
+    printf("  0:");
+    package_print(pkg[0]);
+    printf("  1:");
+    package_print(pkg[1]);
+#endif
     pthread_mutex_unlock(&mtx);
 }
 
