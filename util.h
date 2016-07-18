@@ -1,16 +1,19 @@
 #ifndef __UTIL_H__
 #define __UTIL_H__
 
+/* ┌ ┐ └ ┘ ├ ┤ ┬ ┴ ┼ */
+
 //#define DEBUG
 #define LISTEN_PORT 6666
 #define MAXLEN 4096
 
 typedef unsigned char byte;
+typedef signed long int int32;
 typedef unsigned long int uint32;
 
 struct __point{
-	uint32 x;
-	uint32 y;
+	int32 x;
+	int32 y;
 };
 typedef struct __point point;
 

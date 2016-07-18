@@ -20,50 +20,43 @@
 
 #include "util.h"
 
-package pkg;
+package pkg[2];
 pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
 pthread_t tid, disptid;
 int user;
-/*
+
 void on_read(struct bufferevent *bev, void *arg){
     struct evbuffer *input = bufferevent_get_input(bev);
     char buf[MAXLEN];
     int flag = 0;
     int total = 0;
-    PositionPackage acpkg;
+    package acpkg;
 
-    total = 0;
-    while(1){
-        flag = evbuffer_remove(input, (char *)&acpkg + total, sizeof(PositionPackage) - total);
-        if(flag == sizeof(PositionPackage) - total){
-            while((flag = evbuffer_remove(input, buf, sizeof(buf))) > 0);
-            break;
-        }
-        else{
-            total += flag;
-        }
-    }
+    flag = evbuffer_remove(input, buf, sizeof(package) * 2);
     pthread_mutex_lock(&mtx);
-    pkg = acpkg;
-    //pkg_print(pkg);
+    pkg[0] = *((package *)&buf[0]);
+    pkg[1] = *((package *)&buf[0] + 1);
     pthread_mutex_unlock(&mtx);
-}*/
+}
 
 void on_event(struct bufferevent *bev, short event, void *arg){
     struct evbuffer *output = bufferevent_get_output(bev);
+    struct event_base *base = bufferevent_get_base(bev);
     char buf[MAXLEN];
-    printf("event begin:%d\n", event);
-    if(event & BEV_EVENT_READING){
+    //printf("event begin:%d\n", event);
+    /*if(event & BEV_EVENT_READING){
         printf("Read?\n");
-    }
-    if(event & BEV_EVENT_WRITING){
+    }*/
+    /*if(event & BEV_EVENT_WRITING){
         printf("Write?\n");
-    }
+    }*/
     if(event & BEV_EVENT_EOF){
-        printf("EOF.\n");
+        //printf("EOF.\n");
+        printf("Logged out.\n");
         pthread_cancel(tid);
         pthread_cancel(disptid);
         bufferevent_free(bev);
+        event_base_loopexit(base, NULL);
     }
     if(event & BEV_EVENT_ERROR){
         printf("Error!\n");
@@ -75,16 +68,16 @@ void on_event(struct bufferevent *bev, short event, void *arg){
         printf("Connected.\n");
         buf[0] = 0x80;
         buf[1] = user & 0xFF;
-        *((package *)(&buf[2])) = pkg;
-        evbuffer_add(output, buf, sizeof(pkg) + 2);
+        *((package *)(&buf[2])) = pkg[user];
+        evbuffer_add(output, buf, sizeof(pkg[user]) + 2);
     }
 }
-/*
+
 void *SendingThread(void *arg){
     int kbdfd;
     struct input_event event;
     struct evbuffer *output = bufferevent_get_output(arg);
-    PositionPackage newpkg;
+    char buf[MAXLEN];
 
     kbdfd = open("/dev/input/event1", O_RDONLY);
     if(kbdfd < 0){
@@ -95,42 +88,56 @@ void *SendingThread(void *arg){
         if(read(kbdfd, &event, sizeof(event)) == sizeof(event)){
             if(event.type == EV_KEY && event.value == 1){
                 pthread_mutex_lock(&mtx);
-                newpkg = pkg;
+                buf[0] = 0x40;
+                buf[1] = user;
+                *((package *)&buf[2]) = pkg[user];
                 switch(event.code){
                     case KEY_W:
-                        if(newpkg.vy < 0) newpkg.vy = 0;
-                        else newpkg.vy = 1;
-                        evbuffer_add(output, (char *)&newpkg, sizeof(newpkg));
+                        if(((package *)&buf[2])->velocity.y < 0) ((package *)&buf[2])->velocity.y = 0;
+                        else ((package *)&buf[2])->velocity.y = 1;
+                        evbuffer_add(output, buf, sizeof(package) + 2);
                         break;
                     case KEY_S:
-                        if(newpkg.vy > 0) newpkg.vy = 0;
-                        else newpkg.vy = -1;
-                        evbuffer_add(output, (char *)&newpkg, sizeof(newpkg));
+                        if(((package *)&buf[2])->velocity.y > 0) ((package *)&buf[2])->velocity.y = 0;
+                        else ((package *)&buf[2])->velocity.y = -1;
+                        evbuffer_add(output, buf, sizeof(package) + 2);
                         break;
                     case KEY_A:
-                        if(newpkg.vx > 0) newpkg.vx = 0;
-                        else newpkg.vx = -1;
-                        evbuffer_add(output, (char *)&newpkg, sizeof(newpkg));
+                        if(((package *)&buf[2])->velocity.x > 0) ((package *)&buf[2])->velocity.x = 0;
+                        else ((package *)&buf[2])->velocity.x = -1;
+                        evbuffer_add(output, buf, sizeof(package) + 2);
                         break;
                     case KEY_D:
-                        if(newpkg.vx < 0) newpkg.vx = 0;
-                        else newpkg.vx = 1;
-                        evbuffer_add(output, (char *)&newpkg, sizeof(newpkg));
+                        if(((package *)&buf[2])->velocity.x < 0) ((package *)&buf[2])->velocity.x = 0;
+                        else ((package *)&buf[2])->velocity.x = 1;
+                        evbuffer_add(output, buf, sizeof(package) + 2);
                         break;
                 }
                 pthread_mutex_unlock(&mtx);
             }
         }
     }
-}*/
+}
 
 void display(){
     int x, y;
     glClear(GL_COLOR_BUFFER_BIT);       
-    glColor3f(1.0, 0, 0);
+    glColor3f(0.0, 0.0, 0.0);
     pthread_mutex_lock(&mtx);
-    x = pkg.position.x;
-    y = pkg.position.y;
+    x = pkg[user].position.x;
+    y = pkg[user].position.y;
+    pthread_mutex_unlock(&mtx);
+    glBegin(GL_TRIANGLE_FAN);
+    glVertex3f(x + 2, y + 2, 0);
+    glVertex3f(x - 2, y + 2, 0);
+    glVertex3f(x - 2, y - 2, 0);
+    glVertex3f(x + 2, y - 2, 0);
+    glEnd();
+
+    glColor3f(0.8, 0.2, 0.0);
+    pthread_mutex_lock(&mtx);
+    x = pkg[user^1].position.x;
+    y = pkg[user^1].position.y;
     pthread_mutex_unlock(&mtx);
     glBegin(GL_TRIANGLE_FAN);
     glVertex3f(x + 2, y + 2, 0);
@@ -154,7 +161,7 @@ void reshape(int w, int h){
 
 void *RenderThread(void *arg){
     glutCreateWindow("Client");
-    glClearColor(0.0, 0.0, 0.0, 0.0);
+    glClearColor(1.0, 1.0, 1.0, 0.0);
     glMatrixMode(GL_PROJECTION);
     glOrtho(-200, 200, -200, 200, 5, 15);
     glMatrixMode(GL_MODELVIEW);
@@ -167,7 +174,6 @@ void *RenderThread(void *arg){
 
 int main(int argc,char* argv[]){
     struct event_base *base;
-    struct evdns_base *dns_base;
     struct bufferevent *bev;
 	int fd,res,i;
 	struct sockaddr_in sin;
@@ -178,6 +184,7 @@ int main(int argc,char* argv[]){
         return 1;
     }
     user = strtol(argv[2], NULL, 10);
+    printf("User %d\n", user);
 
     /*GL init*/
     glutInit(&argc, argv);
@@ -185,12 +192,14 @@ int main(int argc,char* argv[]){
     glutInitWindowPosition(100, 100);
     glutInitWindowSize(600, 600);
 
+    /*new event base*/
     base = event_base_new();
     if(!base){
         printf("Get base failed!\n");
         return 1;
     }
 
+    /*new server address*/
     memset(&sin, 0, sizeof(sin));
     sin.sin_family = AF_INET;
     sin.sin_port = htons(LISTEN_PORT);
@@ -200,28 +209,34 @@ int main(int argc,char* argv[]){
         return 1;
     }
 
+    /*new buffer event*/
     bev = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
     if(bev == NULL){
         printf("Create bufferevent failed!\n");
         return 1;
     }
 
-    //pthread_create(&tid, NULL, SendingThread, bev);
+    /*A thread that listen keybord*/
+    pthread_create(&tid, NULL, SendingThread, bev);
+
+    /*A thread that render with OpenGL*/
     pthread_create(&disptid, NULL, RenderThread, bev);
     
+    /*Connect to server*/
     fd = bufferevent_socket_connect(bev, (struct sockaddr*)&sin, sizeof(sin));
-    //fd = bufferevent_socket_connect_hostname(bev, dns_base, AF_UNSPEC,"www.google.com",80);
     if(fd < 0){
         printf("Connect failed!\n");
         bufferevent_free(bev);
         return 1;
     }
-    bufferevent_setcb(bev, NULL, NULL, on_event, NULL);
+    bufferevent_setcb(bev, on_read, NULL, on_event, NULL);
     bufferevent_enable(bev, EV_READ|EV_WRITE);
-    //evbuffer_add_printf(bufferevent_get_output(bev), "GET /\r\n");
+
+    /*start polling*/
     printf("Start polling\n");
     event_base_dispatch(base);
-    printf("Stop polling\n");
-    pthread_join(tid, NULL);
+
+    /*Wait until Xwindow is closed*/
+    pthread_join(disptid, NULL);
 	return 0;
 }
