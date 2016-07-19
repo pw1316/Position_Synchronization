@@ -32,7 +32,7 @@ void on_read(struct bufferevent *bev, void *arg){
     int total = 0;
     package acpkg;
 
-    flag = evbuffer_remove(input, buf, sizeof(package) * 2);
+    while((flag = evbuffer_remove(input, buf, sizeof(package) * 2)) == sizeof(package) * 2){
     pthread_mutex_lock(&mtx);
     pkg[0] = *((package *)&buf[0]);
     pkg[1] = *((package *)&buf[0] + 1);
@@ -44,6 +44,7 @@ void on_read(struct bufferevent *bev, void *arg){
     package_print(pkg[1]);
 #endif
     pthread_mutex_unlock(&mtx);
+    }
 }
 
 void on_event(struct bufferevent *bev, short event, void *arg){
