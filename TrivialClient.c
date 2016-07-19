@@ -93,30 +93,34 @@ void *SendingThread(void *arg){
     }
     while(1){
         if(read(kbdfd, &event, sizeof(event)) == sizeof(event)){
-            if(event.type == EV_KEY && event.value == 1){
+            if(event.type == EV_KEY && event.value != 2){
                 pthread_mutex_lock(&mtx);
                 buf[0] = 0x40;
                 buf[1] = user;
                 *((package *)&buf[2]) = pkg[user];
                 switch(event.code){
                     case KEY_W:
-                        if(((package *)&buf[2])->velocity.y < 0) ((package *)&buf[2])->velocity.y = 0;
-                        else ((package *)&buf[2])->velocity.y = 1;
+                        //printf("KEY  UP   %d\n", event.value);
+                        if(event.value) package_set_velocity((package *)&buf[2], 2, 1);
+                        else package_set_velocity((package *)&buf[2], 2, 0);
                         evbuffer_add(output, buf, sizeof(package) + 2);
                         break;
                     case KEY_S:
-                        if(((package *)&buf[2])->velocity.y > 0) ((package *)&buf[2])->velocity.y = 0;
-                        else ((package *)&buf[2])->velocity.y = -1;
+                        //printf("KEY DOWN  %d\n", event.value);
+                        if(event.value) package_set_velocity((package *)&buf[2], 2, -1);
+                        else package_set_velocity((package *)&buf[2], 2, 0);
                         evbuffer_add(output, buf, sizeof(package) + 2);
                         break;
                     case KEY_A:
-                        if(((package *)&buf[2])->velocity.x > 0) ((package *)&buf[2])->velocity.x = 0;
-                        else ((package *)&buf[2])->velocity.x = -1;
+                        //printf("KEY LEFT  %d\n", event.value);
+                        if(event.value) package_set_velocity((package *)&buf[2], -1, 2);
+                        else package_set_velocity((package *)&buf[2], 0, 2);
                         evbuffer_add(output, buf, sizeof(package) + 2);
                         break;
                     case KEY_D:
-                        if(((package *)&buf[2])->velocity.x < 0) ((package *)&buf[2])->velocity.x = 0;
-                        else ((package *)&buf[2])->velocity.x = 1;
+                        //printf("KEY RIGHT %d\n", event.value);
+                        if(event.value) package_set_velocity((package *)&buf[2], 1, 2);
+                        else package_set_velocity((package *)&buf[2], 0, 2);
                         evbuffer_add(output, buf, sizeof(package) + 2);
                         break;
                 }
@@ -134,11 +138,13 @@ void display(){
     x = pkg[user].position.x;
     y = pkg[user].position.y;
     pthread_mutex_unlock(&mtx);
+    //glBegin(GL_POINTS);
+    //glVertex3f(x, y, 0);
     glBegin(GL_TRIANGLE_FAN);
-    glVertex3f(x + 2, y + 2, 0);
-    glVertex3f(x - 2, y + 2, 0);
-    glVertex3f(x - 2, y - 2, 0);
-    glVertex3f(x + 2, y - 2, 0);
+    glVertex3f(x + OBJ_WIDTH, y + OBJ_WIDTH, 0);
+    glVertex3f(x, y + OBJ_WIDTH, 0);
+    glVertex3f(x, y, 0);
+    glVertex3f(x + OBJ_WIDTH, y, 0);
     glEnd();
 
     glColor3f(0.8, 0.2, 0.0);
@@ -146,11 +152,13 @@ void display(){
     x = pkg[user^1].position.x;
     y = pkg[user^1].position.y;
     pthread_mutex_unlock(&mtx);
+    //glBegin(GL_POINTS);
+    //glVertex3f(x, y, 0);
     glBegin(GL_TRIANGLE_FAN);
-    glVertex3f(x + 2, y + 2, 0);
-    glVertex3f(x - 2, y + 2, 0);
-    glVertex3f(x - 2, y - 2, 0);
-    glVertex3f(x + 2, y - 2, 0);
+    glVertex3f(x + OBJ_WIDTH, y + OBJ_WIDTH, 0);
+    glVertex3f(x, y + OBJ_WIDTH, 0);
+    glVertex3f(x, y, 0);
+    glVertex3f(x + OBJ_WIDTH, y, 0);
     glEnd();
     glFlush();
     glutPostRedisplay();
@@ -160,7 +168,7 @@ void reshape(int w, int h){
     glViewport (0, 0, (GLsizei) w, (GLsizei) h);
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    glOrtho(-200, 200, -200, 200, 5, 15);
+    glOrtho(-MAX_WIDTH, MAX_WIDTH, -MAX_HEIGHT, MAX_HEIGHT, 5, 15);
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
     gluLookAt(0, 0, 10, 0, 0, 0, 0, 1, 0);
@@ -170,7 +178,7 @@ void *RenderThread(void *arg){
     glutCreateWindow("Client");
     glClearColor(1.0, 1.0, 1.0, 0.0);
     glMatrixMode(GL_PROJECTION);
-    glOrtho(-200, 200, -200, 200, 5, 15);
+    glOrtho(-MAX_WIDTH, MAX_WIDTH, -MAX_HEIGHT, MAX_HEIGHT, 5, 15);
     glMatrixMode(GL_MODELVIEW);
     gluLookAt(0, 0, 10, 0, 0, 0, 0, 1, 0);
     glutDisplayFunc(display);
@@ -217,7 +225,7 @@ int main(int argc,char* argv[]){
     }
 
     /*new buffer event*/
-    bev = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
+    bev = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
     if(bev == NULL){
         printf("Create bufferevent failed!\n");
         return 1;

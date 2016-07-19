@@ -1,7 +1,44 @@
 #include "util.h"
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+int32 max(int32 x, int32 y){
+	return (x >= y)? x : y;
+}
+
+int32 min(int32 x, int32 y){
+	return (x <= y)? x : y;
+}
+
+double point_euclidean_distance(point p1, point p2, int base){
+	int x = p1.x - p2.x;
+	int y = p1.y - p2.y;
+	double res;
+	x = x * x;
+	y = y * y;
+	x = x + y;
+	res = sqrt(x);
+	return res;
+}
+
+int point_intersect(point p1, point p2){
+	int32 l, r, t, b;
+	l = max(p1.x, p2.x);
+	r = min(p1.x + OBJ_WIDTH, p2.x + OBJ_WIDTH);
+	b = max(p1.y, p2.y);
+	t = min(p1.y + OBJ_WIDTH, p2.y + OBJ_WIDTH);
+	if(l >= r || b >= t) return 0;
+	return 1;
+}
+
+int package_set_velocity(package *pkgptr, int32 x, int32 y){
+	if(!pkgptr) return 1;
+	pkgptr->velocity.x = x;
+	pkgptr->velocity.y = y;
+	return 0;
+}
 
 package strtopkg(char* ptr, char** endptr, int base){
 	package pkg;

@@ -38,6 +38,22 @@ void *pkgThread(void *arg){
 				package_node_enqueue(queue[1], &pkg[1]);
 				pkg[0].position.x += pkg[0].velocity.x;
 				pkg[0].position.y += pkg[0].velocity.y;
+				if(point_intersect(pkg[0].position, pkg[1].position)){
+					pkg[0].position.x -= pkg[0].velocity.x;
+					pkg[0].position.y -= pkg[0].velocity.y;
+					pkg[0].velocity.x = 0;
+					pkg[0].velocity.y = 0;
+				}
+				else{
+					if(pkg[0].position.x + OBJ_WIDTH > MAX_WIDTH || pkg[0].position.x < -MAX_WIDTH){
+						pkg[0].position.x -= pkg[0].velocity.x;
+						pkg[0].velocity.x = 0;
+					}
+					if(pkg[0].position.y + OBJ_WIDTH > MAX_HEIGHT || pkg[0].position.y < -MAX_HEIGHT){
+						pkg[0].position.y -= pkg[0].velocity.y;
+						pkg[0].velocity.y = 0;
+					}
+				}
 				break;
 			case 2:
 				package_node_enqueue(queue[2], &pkg[0]);
@@ -64,10 +80,11 @@ void on_read(struct bufferevent *bev, void *arg){
 	struct evbuffer *input = bufferevent_get_input(bev);
 	char buf[MAXLEN];
 	package *ptr;
+	point p;
 	int flag = 0;
 	int user = 0;
 
-    flag = evbuffer_remove(input, buf, sizeof(package) + 2);
+    while(flag = evbuffer_remove(input, buf, sizeof(package) + 2) == sizeof(package) + 2){
     pthread_mutex_lock(&mtx);
     user = buf[1]? 1:0;
     switch((byte)buf[0]){
@@ -84,8 +101,9 @@ void on_read(struct bufferevent *bev, void *arg){
     		break;
     	case 0x40:
     		ptr = (package *)&buf[2];
-    		pkg[user].velocity.x = ptr->velocity.x;
-    		pkg[user].velocity.y = ptr->velocity.y;
+    		p = ptr->velocity;
+    		if(p.x == 2) pkg[user].velocity.y = p.y;
+    		if(p.y == 2) pkg[user].velocity.x = p.x;
 #ifdef SERVER_DEBUG
 	printf("GET :\n");
 	printf("  %d:", user);
@@ -94,6 +112,8 @@ void on_read(struct bufferevent *bev, void *arg){
     		break;
     }
     pthread_mutex_unlock(&mtx);
+    usleep(16000);
+	}
 }
 
 void on_write(struct bufferevent *bev, void *arg){
@@ -154,7 +174,7 @@ void on_event(struct bufferevent *bev, short int event, void *arg){
 /*Connection Accepted*/
 void on_acc(struct evconnlistener *listener, evutil_socket_t fd, struct sockaddr *addr, int len, void *arg){
 	struct event_base *base = evconnlistener_get_base(listener);
-	struct bufferevent *bev = bufferevent_socket_new(base, fd, BEV_OPT_CLOSE_ON_FREE);
+	struct bufferevent *bev = bufferevent_socket_new(base, fd, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
 	struct evbuffer *output;
 	struct sockaddr_in *sin = (struct sockaddr_in *)addr;
 	char str[MAXLEN];
