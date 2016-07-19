@@ -60,6 +60,22 @@ void *pkgThread(void *arg){
 				package_node_enqueue(queue[3], &pkg[1]);
 				pkg[1].position.x += pkg[1].velocity.x;
 				pkg[1].position.y += pkg[1].velocity.y;
+				if(point_intersect(pkg[0].position, pkg[1].position)){
+					pkg[1].position.x -= pkg[1].velocity.x;
+					pkg[1].position.y -= pkg[1].velocity.y;
+					pkg[1].velocity.x = 0;
+					pkg[1].velocity.y = 0;
+				}
+				else{
+					if(pkg[1].position.x + OBJ_WIDTH > MAX_WIDTH || pkg[1].position.x < -MAX_WIDTH){
+						pkg[1].position.x -= pkg[1].velocity.x;
+						pkg[1].velocity.x = 0;
+					}
+					if(pkg[1].position.y + OBJ_WIDTH > MAX_HEIGHT || pkg[1].position.y < -MAX_HEIGHT){
+						pkg[1].position.y -= pkg[1].velocity.y;
+						pkg[1].velocity.y = 0;
+					}
+				}
 				break;
 			case 3:
 				package_node_enqueue(queue[0], &pkg[0]);
@@ -70,6 +86,34 @@ void *pkgThread(void *arg){
 				pkg[0].position.y += pkg[0].velocity.y;
 				pkg[1].position.x += pkg[1].velocity.x;
 				pkg[1].position.y += pkg[1].velocity.y;
+				if(point_intersect(pkg[0].position, pkg[1].position)){
+					pkg[0].position.x -= pkg[0].velocity.x;
+					pkg[0].position.y -= pkg[0].velocity.y;
+					pkg[0].velocity.x = 0;
+					pkg[0].velocity.y = 0;
+					pkg[1].position.x -= pkg[1].velocity.x;
+					pkg[1].position.y -= pkg[1].velocity.y;
+					pkg[1].velocity.x = 0;
+					pkg[1].velocity.y = 0;
+				}
+				else{
+					if(pkg[0].position.x + OBJ_WIDTH > MAX_WIDTH || pkg[0].position.x < -MAX_WIDTH){
+						pkg[0].position.x -= pkg[0].velocity.x;
+						pkg[0].velocity.x = 0;
+					}
+					if(pkg[0].position.y + OBJ_WIDTH > MAX_HEIGHT || pkg[0].position.y < -MAX_HEIGHT){
+						pkg[0].position.y -= pkg[0].velocity.y;
+						pkg[0].velocity.y = 0;
+					}
+					if(pkg[1].position.x + OBJ_WIDTH > MAX_WIDTH || pkg[1].position.x < -MAX_WIDTH){
+						pkg[1].position.x -= pkg[1].velocity.x;
+						pkg[1].velocity.x = 0;
+					}
+					if(pkg[1].position.y + OBJ_WIDTH > MAX_HEIGHT || pkg[1].position.y < -MAX_HEIGHT){
+						pkg[1].position.y -= pkg[1].velocity.y;
+						pkg[1].velocity.y = 0;
+					}
+				}
 				break;
 		}
 		pthread_mutex_unlock(&mtx);	
