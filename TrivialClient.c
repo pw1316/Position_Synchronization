@@ -124,6 +124,9 @@ void *SendingThread(void *arg){
                         else package_set_velocity((package *)&buf[2], 0, 2);
                         evbuffer_add(output, buf, sizeof(package) + 2);
                         break;
+                    case KEY_ESC:
+                        bufferevent_free(arg);
+                        break;
                 }
                 pthread_mutex_unlock(&mtx);
             }
