@@ -3,28 +3,42 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
-int32 max(int32 x, int32 y){
+float max(float x, float y){
 	return (x >= y)? x : y;
 }
 
-int32 min(int32 x, int32 y){
+float min(float x, float y){
 	return (x <= y)? x : y;
 }
 
-double point_euclidean_distance(point p1, point p2, int base){
-	int x = p1.x - p2.x;
-	int y = p1.y - p2.y;
-	double res;
+float mid(float x, float y, float z){
+	return min(max(x, y), z);
+}
+
+point point_new(float x, float y){
+	point p;
+	p.x = x;
+	p.y = y;
+	return p;
+}
+
+void point_print(point p){
+	printf("(%.2f,%.2f)\n", p.x, p.y);
+}
+
+float point_euclidean_distance(point p1, point p2, int base){
+	float x = p1.x - p2.x;
+	float y = p1.y - p2.y;
 	x = x * x;
 	y = y * y;
 	x = x + y;
-	res = sqrt(x);
-	return res;
+	return sqrtf(x);
 }
 
 int point_intersect(point p1, point p2){
-	int32 l, r, t, b;
+	float l, r, t, b;
 	l = max(p1.x, p2.x);
 	r = min(p1.x + OBJ_WIDTH, p2.x + OBJ_WIDTH);
 	b = max(p1.y, p2.y);
@@ -33,42 +47,41 @@ int point_intersect(point p1, point p2){
 	return 1;
 }
 
-int package_set_velocity(package *pkgptr, int32 x, int32 y){
+int cube_set_accel(cube *pkgptr, float x, float y){
 	if(!pkgptr) return 1;
-	pkgptr->velocity.x = x;
-	pkgptr->velocity.y = y;
+	pkgptr->accel.x = x;
+	pkgptr->accel.y = y;
 	return 0;
 }
 
-package strtopkg(char* ptr, char** endptr, int base){
-	package pkg;
-	char *p;
-
-	memset(&pkg, 0, sizeof(pkg));
-	if(!ptr) return pkg;
-	pkg.position.x = strtol(ptr, &p, base);
-	pkg.position.y = strtol(p, &p, base);
-	pkg.velocity.x = strtol(p, &p, base);
-	pkg.velocity.y = strtol(p, &p, base);
-	if(endptr) *endptr = p;
-	return pkg;
+void cube_stepforward(cube *c, int steps){
+	if(steps < 0){
+		steps = -steps;
+		while(steps){
+			
+		}
+	}
+	while(steps){
+		c->position.x += c->velocity.x * 1 * sign;
+		c->position.y += c->velocity.x * 1 * sign;
+	}
 }
 
-void package_print(package pkg){
-	printf("PKG:POSITION(%ld,%ld) VELOCITY(%ld,%ld)\n", pkg.position.x, pkg.position.y, pkg.velocity.x, pkg.velocity.y);
+void cube_print(cube pkg){
+	//TODO
 }
 
-package_ptr package_create_queue(){
-	package_ptr head;
-	head = (package_ptr)malloc(sizeof(package_node));
+cube_ptr cube_create_queue(){
+	cube_ptr head;
+	head = (cube_ptr)malloc(sizeof(cube_node));
 	if(!head) return NULL;
-	memset(head, 0, sizeof(package_node));
+	memset(head, 0, sizeof(cube_node));
 	head->next = NULL;
 	return head;
 }
 
-void package_destroy_queue(package_ptr head){
-	package_ptr p = head;
+void cube_destroy_queue(cube_ptr head){
+	cube_ptr p = head;
 	while(head){
 		p = head;
 		head = head->next;
@@ -76,12 +89,12 @@ void package_destroy_queue(package_ptr head){
 	}
 }
 
-int package_node_enqueue(package_ptr head, package *pkgptr){
-	package_ptr p, q;
+int cube_node_enqueue(cube_ptr head, cube *pkgptr){
+	cube_ptr p, q;
 	if(!head) return -1;
 	p = head;
 	while(p->next) p = p->next;
-	q = (package_ptr)malloc(sizeof(package_node));
+	q = (cube_ptr)malloc(sizeof(cube_node));
 	if(!q) return -2;
 	q->pkg = *pkgptr;
 	q->next = NULL;
@@ -89,8 +102,8 @@ int package_node_enqueue(package_ptr head, package *pkgptr){
 	return 0;
 }
 
-int package_node_dequeue(package_ptr head, package *pkgptr){
-	package_ptr p, q;
+int cube_node_dequeue(cube_ptr head, cube *pkgptr){
+	cube_ptr p, q;
 	if(!head) return -1;
 	if(!head->next) return -2;
 	p = head->next;
@@ -101,50 +114,41 @@ int package_node_dequeue(package_ptr head, package *pkgptr){
 	return 0;
 }
 
-void package_print_queue(package_ptr head){
+void cube_print_queue(cube_ptr head){
 	if(!head){
 		printf("Queue not exists!\n");
 	}
 	else{
-		package_ptr p = head->next;
+		cube_ptr p = head->next;
 		if(!p){
 			printf("Empty queue!\n");
 		}
 		else{
 			printf("Head->");
 			while(p){
-				if(p->next) printf("[(%ld,%ld),(%ld,%ld)]->", p->pkg.position.x, p->pkg.position.y, p->pkg.velocity.x, p->pkg.velocity.y);
-				else printf("[(%ld,%ld),(%ld,%ld)]\n", p->pkg.position.x, p->pkg.position.y, p->pkg.velocity.x, p->pkg.velocity.y);
+				if(p->next) printf("[(%.1f,%.1f),(%.1f,%.1f)]->", p->pkg.position.x, p->pkg.position.y, p->pkg.velocity.x, p->pkg.velocity.y);
+				else printf("[(%.1f,%.1f),(%.1f,%.1f)]\n", p->pkg.position.x, p->pkg.position.y, p->pkg.velocity.x, p->pkg.velocity.y);
 				p = p->next;
 			}
 		}
 	}
 }
 
-#ifdef DEBUG
+#ifdef UTIL_DEBUG
 
 int main(){
-	package_ptr head = package_create_queue();
-	if(!head){
-		printf("Create queue failed!\n");
-		return 1;
-	}
-	package pkg1 = strtopkg("0 0 0 0", NULL, 10);
-	package pkg2 = strtopkg("2 2 2 2", NULL, 10);
-	package_print(pkg1);
-	package_print(pkg2);
-	package_node_enqueue(head, &pkg1);
-	package_node_enqueue(head, &pkg2);
-	package_print_queue(head);
-	package_node_dequeue(head,&pkg2);
-	package_print(pkg1);
-	package_print(pkg2);
-	package_print_queue(head);
-	package_destroy_queue(head);
-	head = NULL;
-	package_print_queue(head);
-	head = package_create_queue();
-	package_print_queue(head);
+	time_t t = time(NULL);
+	float a, b, c;
+	point p, q;
+
+	srand(t);
+	a = rand() * 1.0f / RAND_MAX * 10;
+	b = rand() * 1.0f / RAND_MAX * 10;
+	p = point_new(5, 0);
+	q = point_new(0, 12);
+	point_print(p);
+	point_print(q);
+	printf("%.2f\n", point_euclidean_distance(p, q, 2));
 }
 
 #endif
