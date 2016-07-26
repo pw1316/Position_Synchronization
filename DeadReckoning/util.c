@@ -56,15 +56,38 @@ int cube_set_accel(cube *pkgptr, float x, float y){
 
 void cube_stepforward(cube *c, int steps){
 	if(steps < 0){
-		steps = -steps;
-		while(steps){
-			
-		}
+		return;
 	}
 	while(steps){
-		c->position.x += c->velocity.x * 1 * sign;
-		c->position.y += c->velocity.x * 1 * sign;
+		c->position.x += c->velocity.x * DELTA_T;
+		c->position.x = mid(0, c->position.x, MAX_WIDTH - OBJ_WIDTH);
+		c->position.y += c->velocity.y * DELTA_T;
+		c->position.y = mid(0, c->position.y, MAX_HEIGHT - OBJ_WIDTH);
+		c->velocity.x += c->accel.x * DELTA_T;
+		c->velocity.x = mid(0, c->velocity.x, MAX_SPEED);
+		c->velocity.y += c->accel.y * DELTA_T;
+		c->velocity.y = mid(0, c->velocity.y, MAX_SPEED);
+		c->accel.x = c->accel.x / 2;
+		c->accel.y = c->accel.y / 2;
+		steps--;
 	}
+}
+
+int cube_add_to_buffer(char *buf, size_t size, cube cb){
+	if(size < sizeof(cube)){
+		return 1;
+	}
+	memset(buf, 0, sizeof(cube));
+	*((cube *)&buf[0]) = cb;
+	return 0;
+}
+
+int cube_remove_from_buffer(char *buf, size_t size, cube *cb){
+	if(size < sizeof(cube)){
+		return 1;
+	}
+	*cb = *((cube *)&buf[0]);
+	return 0;
 }
 
 void cube_print(cube pkg){

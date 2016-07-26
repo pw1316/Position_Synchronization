@@ -23,15 +23,15 @@ struct bufferevent *user_bev[MAX_PLAYER];
 pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
 pthread_t tid;
 uint32 frame;
+long int interval = 0;
 
 void *pkgThread(void *arg){
-	struct timeval tv, tvbase;
-	long int interval = 0;
+	struct timeval tv, tvold;
 	long int tmp = 0;
 
 	pthread_mutex_lock(&mtx);
 	frame = 0;
-	gettimeofday(&tvbase, NULL);
+	gettimeofday(&tvold, NULL);
 	pthread_mutex_unlock(&mtx);
 	while(1){
 		usleep(1000);
@@ -40,7 +40,7 @@ void *pkgThread(void *arg){
 		tmp = (tv.tv_sec - tvold.tv_sec) * 1000000;
 		tmp += (tv.tv_usec - tvold.tv_usec);
 		interval += tmp / 1000;
-		if(frame % 3 != 0 && interval >= 33 || frame % 3 == 0 && interval >= 34){
+		if((frame % 3 != 0 && interval >= 33) || (frame % 3 == 0 && interval >= 34)){
 			if(frame %3 != 0){
 				interval -= 33;
 			}
@@ -49,28 +49,33 @@ void *pkgThread(void *arg){
 			}
 			frame ++;
 			tvold = tv;
+			tmp = 0;
 			for(int i = 0; i < MAX_PLAYER; i++){
 				if(user_bev[i] == NULL) continue;
 				cube_stepforward(&cubelist[i], 1);
+				//printf("FLUSH: user %d updated | at (%.2f,%.2f) | v (%.2f,%.2f) | a (%.2f,%.2f)\n", i, cubelist[i].position.x, cubelist[i].position.y, cubelist[i].velocity.x, cubelist[i].velocity.y, cubelist[i].accel.x, cubelist[i].accel.y);
+				tmp++;
 			}
 			if(frame % FRAMES_PER_UPDATE == 0){
-				char* buf[MAXLEN];
+				/*char buf[MAXLEN];
+				int j;
 				buf[0] = SC_FLUSH;
 				*((uint32 *)&buf[1]) = frame;
-				int j = sizeof(uint32) + 1;
+				j = sizeof(uint32) + 1;
 				*((long int *)&buf[j]) = interval;
 				j += sizeof(long int);
+				buf[j] = tmp & 0xFF;
+				j++;
 				for(int i = 0; i < MAX_PLAYER; i++){
 					if(user_bev[i] == NULL) continue;
-					buf[j] = (char)i;
+					buf[j] = i & 0xFF;
 					*((cube *)&buf[j+1]) = cubelist[i];
 					j += sizeof(cube) + 1;
 				}
 				for(int i = 0; i < MAX_PLAYER; i++){
 					if(user_bev[i] == NULL) continue;
-					printf("user %d send...\n", i);
 					evbuffer_add(bufferevent_get_output(user_bev[i]), buf, j);
-				}
+				}*/
 			}
 		}
 		pthread_mutex_unlock(&mtx);
@@ -80,56 +85,57 @@ void *pkgThread(void *arg){
 void on_read(struct bufferevent *bev, void *arg){
 	struct evbuffer *input = bufferevent_get_input(bev);
 	char buf[MAXLEN];
-	cube *ptr;
-	point p;
+	char sendbuf[MAXLEN];
 	int flag = 0;
-	int user = 0;
+	uint32 cframe;
+	int cuser;
 
-	flag = evbuffer_remove(input, buf, 1);
-	switch(buf[0]){
-		case CS_LOGIN:
-			flag = evbuffer_remove(input, buf, 1);
-			pthread_mutex_lock(&mtx);
-    		if(user_bev[buf[0]]){
-    			bufferevent_free(bev);
-    		}
-    		else{
-    			printf("User %d in...\n", buf[0]);
-    			user_bev[buf[0]] = bev;
-    			bufferevent_enable(bev, EV_READ|EV_WRITE);
-    		}
-    		pthread_mutex_unlock(&mtx);
-    		break;
-	}
-    while(flag = evbuffer_remove(input, buf, sizeof(cube) + 2) == sizeof(cube) + 2){
-    pthread_mutex_lock(&mtx);
-    user = buf[1]? 1:0;
-    switch((byte)buf[0]){
-    	case 0x80:
-    		if(user_in[user]){
-    			bufferevent_free(bev);
-    		}
-    		else{
-    			printf("User %d in.\n", user);
-    			user_in[user] = 1;
-    			user_bev[user] = bev;
-    			bufferevent_enable(bev, EV_READ|EV_WRITE);
-    		}
-    		break;
-    	case 0x40:
-    		ptr = (cube *)&buf[2];
-    		p = ptr->velocity;
-    		if(p.x == 2) pkg[user].velocity.y = p.y;
-    		if(p.y == 2) pkg[user].velocity.x = p.x;
-#ifdef SERVER_DEBUG
-	printf("GET :\n");
-	printf("  %d:", user);
-	cube_print(pkg[user]);
-#endif
-    		break;
-    }
-    pthread_mutex_unlock(&mtx);
-    usleep(16000);
+	while(1){
+		flag = evbuffer_remove(input, buf, 1);
+		if(flag <= 0) break;
+		switch((byte)buf[0]){
+			case CS_LOGIN:
+				printf("LOGIN: ");
+				flag = evbuffer_remove(input, buf, 1);
+				//printf("%d more bytes | ", flag);
+				pthread_mutex_lock(&mtx);
+    			if(user_bev[(int)buf[0]]){
+    				printf("user %d already in\n", buf[0]);
+    				bufferevent_free(bev);
+    			}
+    			else{
+    				int user = buf[0];
+    				printf("user %d in\n", user);
+    				user_bev[user] = bev;
+    				bufferevent_enable(bev, EV_READ|EV_WRITE);
+    				sendbuf[0] = SC_CONFIRM;
+    				*((uint32 *)&sendbuf[1]) = frame;
+    				*((long int *)&sendbuf[5]) = interval;
+    				//printf("af frame %ld + %ldms | ", frame, interval);
+    				*((cube *)&sendbuf[9]) = cubelist[user];
+    				//printf("at (%.2f,%.2f) | ", cubelist[user].position.x, cubelist[user].position.y);
+    				//printf("v (%.2f,%.2f) | ", cubelist[user].velocity.x, cubelist[user].velocity.y);
+    				//printf("a (%.2f,%.2f)\n", cubelist[user].accel.x, cubelist[user].accel.y);
+    				evbuffer_add(bufferevent_get_output(bev), sendbuf, sizeof(cube) + 9);
+    			}
+    			pthread_mutex_unlock(&mtx);
+    			break;
+    		case CS_UPDATE:
+    			//printf("UPDATE: ");
+    			flag = evbuffer_remove(input, buf, 5 + sizeof(cube));
+    			//printf("%d more bytes | ", flag);
+    			pthread_mutex_lock(&mtx);
+    			cframe = *((uint32 *)&buf[0]);
+    			cuser = buf[4];
+    			//printf("frame %ld | user %d | ", cframe, cuser);
+    			cubelist[cuser] = *((cube *)&buf[5]);
+    			//printf("at (%.2f,%.2f) | v (%.2f,%.2f) | a (%.2f,%.2f)\n", cubelist[cuser].position.x, cubelist[cuser].position.y, cubelist[cuser].velocity.x, cubelist[cuser].velocity.y, cubelist[cuser].accel.x, cubelist[cuser].accel.y);
+    			//printf("CURRENT: ");
+    			//printf("frame %ld | user %d\n", frame, cuser);
+    			cube_stepforward(&cubelist[cuser], frame - cframe);
+    			pthread_mutex_unlock(&mtx);
+    			break;
+		}
 	}
 }
 /*
@@ -154,28 +160,19 @@ void on_write(struct bufferevent *bev, void *arg){
 	evbuffer_add(output, (char *)pkg_in_queue, sizeof(pkg_in_queue));
 	pthread_mutex_unlock(&mtx);
 }
-*//*
+*/
 void on_event(struct bufferevent *bev, short int event, void *arg){
 	int user;
 	pthread_mutex_lock(&mtx);
 	user = (bev == user_bev[1])? 1:0;
 	pthread_mutex_unlock(&mtx);
     //printf("Event begin:%d\n", event);
-    /*if(event & BEV_EVENT_READING){
-        printf("  event:Read?\n");
-    }*/
-    /*if(event & BEV_EVENT_WRITING){
-        printf("  event:Write?\n");
-    }*//*
     if(event & BEV_EVENT_EOF){
-        //printf("  event:EOF.\n");
         pthread_mutex_lock(&mtx);
-        printf("User %d out\n", user);
+        printf("user %d out\n", user);
         bufferevent_free(bev);
         user_bev[user] = NULL;
-        user_in[user] = 0;
         pthread_mutex_unlock(&mtx);
-        //printf("FIN\n");
     }
     if(event & BEV_EVENT_ERROR){
         printf("  event:Error!\n");
@@ -187,20 +184,18 @@ void on_event(struct bufferevent *bev, short int event, void *arg){
         printf("  event:Connected.\n");
     }
 }
-*/
+
 /*Connection Accepted*/
 void on_acc(struct evconnlistener *listener, evutil_socket_t fd, struct sockaddr *addr, int len, void *arg){
 	struct event_base *base = evconnlistener_get_base(listener);
-	struct bufferevent *bev = bufferevent_socket_new(base, fd, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
-	struct evbuffer *output;
+	struct bufferevent *bev = bufferevent_socket_new(base, fd, BEV_OPT_CLOSE_ON_FREE);
 	struct sockaddr_in *sin = (struct sockaddr_in *)addr;
 	char str[MAXLEN];
 	inet_ntop(AF_INET, &sin->sin_addr, str, MAXLEN);
 
 	printf("ACK from %s:%d\n", str, ntohs(sin->sin_port));
-	close(fd);
-	bufferevent_setcb(bev, NULL, NULL, on_event, arg);
-	bufferevent_enable(bev, EV_READ|EV_WRITE);
+	bufferevent_setcb(bev, on_read, NULL, on_event, arg);
+	bufferevent_enable(bev, EV_READ);
 }
 
 /*Accept Failed*/
@@ -214,9 +209,6 @@ void on_acc_error(struct evconnlistener *listener, void *arg){
 int main(){
 	struct event_base *base;
 	struct evconnlistener *listener;
-
-	int flag;
-	int listenfd;
 	struct sockaddr_in sin;
 
 	memset(user_bev, 0, sizeof(user_bev));
@@ -224,7 +216,6 @@ int main(){
 	{
 		int fd,res,i;
 		char buf[MAXLEN];
-		char *p;
 		fd = open("data.db", O_RDONLY);
 		if(fd < 0){
 			printf("File open error!\n");

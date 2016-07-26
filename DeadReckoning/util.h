@@ -8,17 +8,28 @@
 //#define UTIL_DEBUG
 //#define SERVER_DEBUG
 //#define CLIENT_DEBUG
+
+/*server port*/
 #define LISTEN_PORT 23333
+/*socket buffer size*/
 #define MAXLEN 4096
+/*max number of players*/
 #define MAX_PLAYER 4
-#define FRAMES_PER_UPDATE 10
+/*how often CS communicate*/
+#define FRAMES_PER_UPDATE 50
+/*time 1 frame takes for game*/
+#define DELTA_T 1
+/*max speed*/
+#define MAX_SPEED 5
 
-#define CS_LOGIN 0x80
-#define SC_FLUSH 0x81
+#define CS_LOGIN	0x80 //[1 OP][1 user]
+#define CS_UPDATE	0x81 //[1 OP][4 frame][1+cube entity]
+#define SC_CONFIRM	0x82 //[1 OP][4 frame][4 interval]
+#define SC_FLUSH	0x83 //[1 OP][4 frame][4 interval][1 num][entities]
 
-#define MAX_HEIGHT 30
-#define MAX_WIDTH 30
-#define OBJ_WIDTH 2
+#define MAX_HEIGHT 200
+#define MAX_WIDTH 300
+#define OBJ_WIDTH 10
 
 /*====================================*/
 typedef unsigned char byte;
@@ -53,6 +64,8 @@ typedef struct __cube cube;
 
 int cube_set_accel(cube *pkgptr, float x, float y);
 void cube_stepforward(cube *c, int steps);
+int cube_add_to_buffer(char *buf, size_t size, cube cb);
+int cube_remove_from_buffer(char *buf, size_t size, cube *cb);
 void cube_print(cube pkg);
 
 /*====================================*/

@@ -3,6 +3,7 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -20,150 +21,37 @@
 
 #include "util.h"
 
-package pkg[2];
+cube cubelist[MAX_PLAYER];
+byte user_in[MAX_PLAYER];
 pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
 pthread_t tid, disptid;
 int user;
-
-void on_read(struct bufferevent *bev, void *arg){
-    struct evbuffer *input = bufferevent_get_input(bev);
-    char buf[MAXLEN];
-    int flag = 0;
-    int total = 0;
-    package acpkg;
-
-    while((flag = evbuffer_remove(input, buf, sizeof(package) * 2)) == sizeof(package) * 2){
-    pthread_mutex_lock(&mtx);
-    pkg[0] = *((package *)&buf[0]);
-    pkg[1] = *((package *)&buf[0] + 1);
-#ifdef CLIENT_DEBUG
-    printf("GET :\n");
-    printf("  0:");
-    package_print(pkg[0]);
-    printf("  1:");
-    package_print(pkg[1]);
-#endif
-    pthread_mutex_unlock(&mtx);
-    }
-}
-
-void on_event(struct bufferevent *bev, short event, void *arg){
-    struct evbuffer *output = bufferevent_get_output(bev);
-    struct event_base *base = bufferevent_get_base(bev);
-    char buf[MAXLEN];
-    //printf("event begin:%d\n", event);
-    /*if(event & BEV_EVENT_READING){
-        printf("Read?\n");
-    }*/
-    /*if(event & BEV_EVENT_WRITING){
-        printf("Write?\n");
-    }*/
-    if(event & BEV_EVENT_EOF){
-        //printf("EOF.\n");
-        printf("Logged out.\n");
-        pthread_cancel(tid);
-        pthread_cancel(disptid);
-        bufferevent_free(bev);
-        event_base_loopexit(base, NULL);
-    }
-    if(event & BEV_EVENT_ERROR){
-        printf("Error!\n");
-    }
-    if(event & BEV_EVENT_TIMEOUT){
-        printf("Timeout!\n");
-    }
-    if(event & BEV_EVENT_CONNECTED){
-        printf("Connected.\n");
-        buf[0] = 0x80;
-        buf[1] = user & 0xFF;
-        *((package *)(&buf[2])) = pkg[user];
-        evbuffer_add(output, buf, sizeof(pkg[user]) + 2);
-    }
-}
-
-void *SendingThread(void *arg){
-    int kbdfd;
-    struct input_event event;
-    struct evbuffer *output = bufferevent_get_output(arg);
-    char buf[MAXLEN];
-
-    kbdfd = open("/dev/input/event1", O_RDONLY);
-    if(kbdfd < 0){
-        printf("Open device failed!\n");
-        return NULL;
-    }
-    while(1){
-        if(read(kbdfd, &event, sizeof(event)) == sizeof(event)){
-            if(event.type == EV_KEY && event.value != 2){
-                pthread_mutex_lock(&mtx);
-                buf[0] = 0x40;
-                buf[1] = user;
-                *((package *)&buf[2]) = pkg[user];
-                switch(event.code){
-                    case KEY_W:
-                        //printf("KEY  UP   %d\n", event.value);
-                        if(event.value) package_set_velocity((package *)&buf[2], 2, 1);
-                        else package_set_velocity((package *)&buf[2], 2, 0);
-                        evbuffer_add(output, buf, sizeof(package) + 2);
-                        break;
-                    case KEY_S:
-                        //printf("KEY DOWN  %d\n", event.value);
-                        if(event.value) package_set_velocity((package *)&buf[2], 2, -1);
-                        else package_set_velocity((package *)&buf[2], 2, 0);
-                        evbuffer_add(output, buf, sizeof(package) + 2);
-                        break;
-                    case KEY_A:
-                        //printf("KEY LEFT  %d\n", event.value);
-                        if(event.value) package_set_velocity((package *)&buf[2], -1, 2);
-                        else package_set_velocity((package *)&buf[2], 0, 2);
-                        evbuffer_add(output, buf, sizeof(package) + 2);
-                        break;
-                    case KEY_D:
-                        //printf("KEY RIGHT %d\n", event.value);
-                        if(event.value) package_set_velocity((package *)&buf[2], 1, 2);
-                        else package_set_velocity((package *)&buf[2], 0, 2);
-                        evbuffer_add(output, buf, sizeof(package) + 2);
-                        break;
-                    case KEY_ESC:
-                        bufferevent_free(arg);
-                        break;
-                }
-                pthread_mutex_unlock(&mtx);
-            }
-        }
-    }
-}
+uint32 frame;
+long int interval;
+struct timeval tv, tvold;
 
 void display(){
-    int x, y;
-    glClear(GL_COLOR_BUFFER_BIT);       
-    glColor3f(0.0, 0.0, 0.0);
+    float x, y;
+    glClear(GL_COLOR_BUFFER_BIT);
     pthread_mutex_lock(&mtx);
-    x = pkg[user].position.x;
-    y = pkg[user].position.y;
+    for(int i = 0; i < MAX_PLAYER; i++){
+        if(user_in[i] == 0) continue;
+        if(i == user){
+            glColor3f(0.0, 0.0, 0.0);
+        }
+        else{
+            glColor3f(0.8, 0.2, 0.0);
+        }
+        x = cubelist[i].position.x;
+        y = cubelist[i].position.y;
+        glBegin(GL_TRIANGLE_FAN);
+        glVertex3f(x + OBJ_WIDTH, y + OBJ_WIDTH, 0);
+        glVertex3f(x, y + OBJ_WIDTH, 0);
+        glVertex3f(x, y, 0);
+        glVertex3f(x + OBJ_WIDTH, y, 0);
+        glEnd();
+    }
     pthread_mutex_unlock(&mtx);
-    //glBegin(GL_POINTS);
-    //glVertex3f(x, y, 0);
-    glBegin(GL_TRIANGLE_FAN);
-    glVertex3f(x + OBJ_WIDTH, y + OBJ_WIDTH, 0);
-    glVertex3f(x, y + OBJ_WIDTH, 0);
-    glVertex3f(x, y, 0);
-    glVertex3f(x + OBJ_WIDTH, y, 0);
-    glEnd();
-
-    glColor3f(0.8, 0.2, 0.0);
-    pthread_mutex_lock(&mtx);
-    x = pkg[user^1].position.x;
-    y = pkg[user^1].position.y;
-    pthread_mutex_unlock(&mtx);
-    //glBegin(GL_POINTS);
-    //glVertex3f(x, y, 0);
-    glBegin(GL_TRIANGLE_FAN);
-    glVertex3f(x + OBJ_WIDTH, y + OBJ_WIDTH, 0);
-    glVertex3f(x, y + OBJ_WIDTH, 0);
-    glVertex3f(x, y, 0);
-    glVertex3f(x + OBJ_WIDTH, y, 0);
-    glEnd();
     glFlush();
     glutPostRedisplay();
 }
@@ -188,28 +76,192 @@ void *RenderThread(void *arg){
     glutDisplayFunc(display);
     glutReshapeFunc(reshape);
     glutMainLoop();
-    return 0;
+    return NULL;
 }
+
+void *pkgThread(void *arg){
+    long int tmp = 0;
+
+    while(1){
+        usleep(1000);
+        pthread_mutex_lock(&mtx);
+        gettimeofday(&tv, NULL);
+        tmp = (tv.tv_sec - tvold.tv_sec) * 1000000;
+        tmp += (tv.tv_usec - tvold.tv_usec);
+        interval += tmp / 1000;
+        if((frame % 3 != 0 && interval >= 33) || (frame % 3 == 0 && interval >= 34)){
+            if(frame %3 != 0){
+                interval -= 33;
+            }
+            else{
+                interval -= 34;
+            }
+            frame ++;
+            tvold = tv;
+            tmp = 0;
+            for(int i = 0; i < MAX_PLAYER; i++){
+                if(user_in[i] == 0) continue;
+                cube_stepforward(&cubelist[i], 1);
+                tmp++;
+            }
+            if(frame % FRAMES_PER_UPDATE == 0){
+                char buf[MAXLEN];
+                int j;
+                buf[0] = CS_UPDATE;
+                *((uint32 *)&buf[1]) = frame;
+                buf[5] = user & 0xFF;
+                *((cube *)&buf[6]) = cubelist[user];
+                j+= sizeof(cube);
+                //printf("frame %ld:user %d at (%.2f,%.2f)\n", frame, user, cubelist[user].position.x, cubelist[user].position.y);
+                evbuffer_add(bufferevent_get_output(arg), buf, 6 + sizeof(cube));
+            }
+        }
+        pthread_mutex_unlock(&mtx);
+    }
+}
+
+void on_read(struct bufferevent *bev, void *arg){
+    struct evbuffer *input = bufferevent_get_input(bev);
+    char buf[MAXLEN];
+    int flag = 0;
+    //uint32 sframe;
+    //long int sinterval;
+    //byte tmp;
+
+    while(1){
+        int j;
+        flag = evbuffer_remove(input, buf, 1);
+        if(flag <= 0) break;
+        switch((byte)buf[0]){
+            case SC_CONFIRM:
+                //printf("CONFIRM: ");
+                j = 0;
+                flag = evbuffer_remove(input, buf, sizeof(cube) + 8);
+                //printf("%d more bytes | ", flag);
+                pthread_mutex_lock(&mtx);
+                gettimeofday(&tvold, NULL);
+                frame = *((uint32 *)&buf[j]);
+                j += sizeof(uint32);
+                interval = *((long int *)&buf[j]);
+                j += sizeof(long int);
+                //printf("frame %ld + %ldms | ", frame, interval);
+                cubelist[user] = *((cube *)&buf[j]);
+                //printf("initial position (%.2f,%.2f)\n", cubelist[user].position.x, cubelist[user].position.y);
+                user_in[user] = 1;
+                pthread_create(&tid, NULL, pkgThread, bev);
+                pthread_mutex_unlock(&mtx);
+            case SC_FLUSH:
+                /*j = 0;
+                evbuffer_remove(input, buf, sizeof(uint32) + sizeof(long int) + 1);
+                sframe = *((uint32 *)&buf[0]);
+                j += sizeof(uint32);
+                sinterval = *((long int *)&buf[j]);
+                j += sizeof(long int);
+                tmp = (byte)buf[j];
+                j++;
+                pthread_mutex_lock(&mtx);
+                //memset(user_in, 0, sizeof(user_in));
+                while(tmp--){
+                    evbuffer_remove(input, buf, sizeof(cube) + 1);
+                    if(buf[0] != user){
+                        cubelist[(int)buf[0]] = *((cube *)&buf[1]);
+                    }
+                    user_in[(int)buf[0]] = 1;
+                }
+                if(sframe > frame){
+                    gettimeofday(&tvold, NULL);
+                    interval = sinterval;
+                    cube_stepforward(&cubelist[user], sframe - frame);
+                    frame = sframe;
+                }
+                pthread_mutex_unlock(&mtx);*/
+                break;
+        }
+    }
+}
+
+void on_event(struct bufferevent *bev, short event, void *arg){
+    struct evbuffer *output = bufferevent_get_output(bev);
+    struct event_base *base = bufferevent_get_base(bev);
+    char buf[MAXLEN];
+    //printf("event begin:%d\n", event);
+    if(event & BEV_EVENT_EOF){
+        printf("Logged out.\n");
+        pthread_cancel(tid);
+        bufferevent_free(bev);
+        event_base_loopexit(base, NULL);
+    }
+    if(event & BEV_EVENT_ERROR){
+        printf("Error!\n");
+    }
+    if(event & BEV_EVENT_TIMEOUT){
+        printf("Timeout!\n");
+    }
+    if(event & BEV_EVENT_CONNECTED){
+        printf("Connected.\n");
+        buf[0] = CS_LOGIN;
+        buf[1] = user & 0xFF;
+        evbuffer_add(output, buf, 2);
+    }
+}
+/*
+void *SendingThread(void *arg){
+    int kbdfd;
+    struct input_event event;
+    //struct evbuffer *output = bufferevent_get_output(arg);
+
+    kbdfd = open("/dev/input/event1", O_RDONLY);
+    if(kbdfd < 0){
+        printf("Open device failed!\n");
+        return NULL;
+    }
+    while(1){
+        if(read(kbdfd, &event, sizeof(event)) == sizeof(event)){
+            if(event.type == EV_KEY && event.value != 2){
+                pthread_mutex_lock(&mtx);
+                switch(event.code){
+                    case KEY_W:
+                        printf("KEY  UP   %d\n", event.value);
+                        break;
+                    case KEY_S:
+                        printf("KEY DOWN  %d\n", event.value);
+                        break;
+                    case KEY_A:
+                        printf("KEY LEFT  %d\n", event.value);
+                        break;
+                    case KEY_D:
+                        printf("KEY RIGHT %d\n", event.value);
+                        break;
+                    case KEY_ESC:
+                        bufferevent_free(arg);
+                        break;
+                }
+                pthread_mutex_unlock(&mtx);
+            }
+        }
+    }
+}
+*/
 
 int main(int argc,char* argv[]){
     struct event_base *base;
     struct bufferevent *bev;
-	int fd,res,i;
+	int fd,res;
 	struct sockaddr_in sin;
-	char recbuf[100];
 
     if(argc != 3){
-        printf("usage: %s <host> <0-1>\n", argv[0]);
+        printf("usage: %s <host> <0-3>\n", argv[0]);
         return 1;
     }
     user = strtol(argv[2], NULL, 10);
     printf("User %d\n", user);
+    memset(user_in, 0, sizeof(user_in));
 
     /*GL init*/
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_RGB | GLUT_SINGLE);
     glutInitWindowPosition(100, 100);
-    glutInitWindowSize(600, 600);
+    glutInitWindowSize(600, 400);
 
     /*new event base*/
     base = event_base_new();
@@ -229,14 +281,14 @@ int main(int argc,char* argv[]){
     }
 
     /*new buffer event*/
-    bev = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE|BEV_OPT_DEFER_CALLBACKS);
+    bev = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
     if(bev == NULL){
         printf("Create bufferevent failed!\n");
         return 1;
     }
 
     /*A thread that listen keybord*/
-    pthread_create(&tid, NULL, SendingThread, bev);
+    //pthread_create(&tid, NULL, SendingThread, bev);
 
     /*A thread that render with OpenGL*/
     pthread_create(&disptid, NULL, RenderThread, bev);
