@@ -40,12 +40,12 @@ void *pkgThread(void *arg){
 		tmp = (tv.tv_sec - tvold.tv_sec) * 1000000;
 		tmp += (tv.tv_usec - tvold.tv_usec);
 		interval += tmp / 1000;
-		if((frame % 3 != 0 && interval >= 33) || (frame % 3 == 0 && interval >= 34)){
+		if((frame % 3 != 0 && interval >= 330) || (frame % 3 == 0 && interval >= 340)){
 			if(frame %3 != 0){
-				interval -= 33;
+				interval -= 330;
 			}
 			else{
-				interval -= 34;
+				interval -= 340;
 			}
 			frame ++;
 			tvold = tv;
@@ -176,6 +176,13 @@ void on_event(struct bufferevent *bev, short int event, void *arg){
     }
     if(event & BEV_EVENT_ERROR){
         printf("  event:Error!\n");
+        pthread_mutex_lock(&mtx);
+        printf("LOGOUT: user %d out | last status ", user);
+        cube_print(cubelist[user]);
+        printf("\n");
+        bufferevent_free(bev);
+        user_bev[user] = NULL;
+        pthread_mutex_unlock(&mtx);
     }
     if(event & BEV_EVENT_TIMEOUT){
         printf("  event:Timeout!\n");

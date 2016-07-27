@@ -92,12 +92,12 @@ void *pkgThread(void *arg){
         tmp = (tv.tv_sec - tvold.tv_sec) * 1000000;
         tmp += (tv.tv_usec - tvold.tv_usec);
         interval += tmp / 1000;
-        if((frame % 3 != 0 && interval >= 33) || (frame % 3 == 0 && interval >= 34)){
+        if((frame % 3 != 0 && interval >= 330) || (frame % 3 == 0 && interval >= 340)){
             if(frame %3 != 0){
-                interval -= 33;
+                interval -= 330;
             }
             else{
-                interval -= 34;
+                interval -= 340;
             }
             frame ++;
             tvold = tv;
