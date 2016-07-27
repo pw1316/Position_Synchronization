@@ -16,7 +16,7 @@
 /*max number of players*/
 #define MAX_PLAYER 4
 /*how often CS communicate*/
-#define FRAMES_PER_UPDATE 50
+#define FRAMES_PER_UPDATE 5
 /*time 1 frame takes for game*/
 #define DELTA_T 1
 /*max speed*/

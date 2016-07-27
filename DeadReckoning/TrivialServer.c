@@ -69,7 +69,7 @@ void *pkgThread(void *arg){
 					*((cube *)&buf[j+1]) = cubelist[i];
 					j += sizeof(cube) + 1;
 				}
-				printf("UPDATE: frame %ld + %ldms | %d players in", frame, interval, tmp);
+				//printf("UPDATE: frame %ld + %ldms | %d players in", frame, interval, tmp);
 				for(int i = 0; i < MAX_PLAYER; i++){
 					if(user_bev[i] == NULL) continue;
 					printf(" | %d", i);
