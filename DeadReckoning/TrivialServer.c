@@ -24,6 +24,7 @@ pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
 pthread_t tid;
 uint32 frame;
 long int interval = 0;
+FILE *logfile;
 
 void *pkgThread(void *arg){
 	struct timeval tv, tvold;
@@ -219,6 +220,7 @@ int main(){
 	struct sockaddr_in sin;
 
 	memset(user_bev, 0, sizeof(user_bev));
+	logfd = open("server.log", O_CREAT|O_WRONLY, 0664);
 	/*reading data from file*/
 	{
 		int fd,res,i;
