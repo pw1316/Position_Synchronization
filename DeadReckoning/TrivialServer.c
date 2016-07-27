@@ -27,7 +27,7 @@ long int interval = 0;
 
 void *pkgThread(void *arg){
 	struct timeval tv, tvold;
-	long int tmp = 0;
+	int tmp = 0;
 
 	pthread_mutex_lock(&mtx);
 	frame = 0;
@@ -53,29 +53,29 @@ void *pkgThread(void *arg){
 			for(int i = 0; i < MAX_PLAYER; i++){
 				if(user_bev[i] == NULL) continue;
 				cube_stepforward(&cubelist[i], 1);
-				//printf("FLUSH: user %d updated | at (%.2f,%.2f) | v (%.2f,%.2f) | a (%.2f,%.2f)\n", i, cubelist[i].position.x, cubelist[i].position.y, cubelist[i].velocity.x, cubelist[i].velocity.y, cubelist[i].accel.x, cubelist[i].accel.y);
 				tmp++;
 			}
 			if(frame % FRAMES_PER_UPDATE == 0){
-				/*char buf[MAXLEN];
+				char buf[MAXLEN];
 				int j;
 				buf[0] = SC_FLUSH;
 				*((uint32 *)&buf[1]) = frame;
-				j = sizeof(uint32) + 1;
-				*((long int *)&buf[j]) = interval;
-				j += sizeof(long int);
-				buf[j] = tmp & 0xFF;
-				j++;
+				*((long int *)&buf[5]) = interval;
+				buf[9] = tmp & 0xFF;
+				j = 10;
 				for(int i = 0; i < MAX_PLAYER; i++){
 					if(user_bev[i] == NULL) continue;
 					buf[j] = i & 0xFF;
 					*((cube *)&buf[j+1]) = cubelist[i];
 					j += sizeof(cube) + 1;
 				}
+				printf("UPDATE: frame %ld + %ldms | %d players in", frame, interval, tmp);
 				for(int i = 0; i < MAX_PLAYER; i++){
 					if(user_bev[i] == NULL) continue;
+					printf(" | %d", i);
 					evbuffer_add(bufferevent_get_output(user_bev[i]), buf, j);
-				}*/
+				}
+				printf("\n");
 			}
 		}
 		pthread_mutex_unlock(&mtx);
@@ -121,17 +121,11 @@ void on_read(struct bufferevent *bev, void *arg){
     			pthread_mutex_unlock(&mtx);
     			break;
     		case CS_UPDATE:
-    			//printf("UPDATE: ");
     			flag = evbuffer_remove(input, buf, 5 + sizeof(cube));
-    			//printf("%d more bytes | ", flag);
     			pthread_mutex_lock(&mtx);
     			cframe = *((uint32 *)&buf[0]);
     			cuser = buf[4];
-    			//printf("frame %ld | user %d | ", cframe, cuser);
     			cubelist[cuser] = *((cube *)&buf[5]);
-    			//printf("at (%.2f,%.2f) | v (%.2f,%.2f) | a (%.2f,%.2f)\n", cubelist[cuser].position.x, cubelist[cuser].position.y, cubelist[cuser].velocity.x, cubelist[cuser].velocity.y, cubelist[cuser].accel.x, cubelist[cuser].accel.y);
-    			//printf("CURRENT: ");
-    			//printf("frame %ld | user %d\n", frame, cuser);
     			cube_stepforward(&cubelist[cuser], frame - cframe);
     			pthread_mutex_unlock(&mtx);
     			break;
@@ -164,12 +158,18 @@ void on_write(struct bufferevent *bev, void *arg){
 void on_event(struct bufferevent *bev, short int event, void *arg){
 	int user;
 	pthread_mutex_lock(&mtx);
-	user = (bev == user_bev[1])? 1:0;
+	for(int i = 0; i < MAX_PLAYER; i++){
+    	if(bev == user_bev[i]){
+    		user = i;
+    		break;
+    	}
+    }
 	pthread_mutex_unlock(&mtx);
-    //printf("Event begin:%d\n", event);
     if(event & BEV_EVENT_EOF){
         pthread_mutex_lock(&mtx);
-        printf("user %d out\n", user);
+        printf("LOGOUT: user %d out | last status ", user);
+        cube_print(cubelist[user]);
+        printf("\n");
         bufferevent_free(bev);
         user_bev[user] = NULL;
         pthread_mutex_unlock(&mtx);

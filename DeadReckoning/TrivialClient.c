@@ -24,11 +24,13 @@
 cube cubelist[MAX_PLAYER];
 byte user_in[MAX_PLAYER];
 pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
-pthread_t tid, disptid;
+pthread_mutex_t keymtx = PTHREAD_MUTEX_INITIALIZER;
+pthread_t tid, disptid, keytid;
 int user;
 uint32 frame;
 long int interval;
 struct timeval tv, tvold;
+keyevent_queue_ptr keyqueue;
 
 void display(){
     float x, y;
@@ -81,6 +83,7 @@ void *RenderThread(void *arg){
 
 void *pkgThread(void *arg){
     long int tmp = 0;
+    keyevent kev;
 
     while(1){
         usleep(1000);
@@ -99,6 +102,67 @@ void *pkgThread(void *arg){
             frame ++;
             tvold = tv;
             tmp = 0;
+            while(keyevent_queue_gethead(keyqueue, &kev) == 0){
+                if(kev.frame < frame){
+                    keyevent_queue_dequeue(keyqueue, &kev);
+                    switch(kev.key){
+                        case KEY_W:
+                            if(kev.value == 1){
+                                cubelist[user].velocity.y = mid(0, cubelist[user].velocity.y, MAX_SPEED);
+                                cubelist[user].accel.y = MAX_ACCEL;
+                            }
+                            else{
+                                if(cubelist[user].velocity.y > 0){
+                                    cubelist[user].accel.y = -MAX_ACCEL;
+                                }
+                            }
+                            break;
+                        case KEY_S:
+                            if(kev.value == 1){
+                                cubelist[user].velocity.y = mid(-MAX_SPEED, cubelist[user].velocity.y, 0);
+                                cubelist[user].accel.y = -MAX_ACCEL;
+                            }
+                            else{
+                                if(cubelist[user].velocity.y < 0){
+                                    cubelist[user].accel.y = MAX_ACCEL;
+                                }
+                            }
+                            break;
+                        case KEY_A:
+                            if(kev.value == 1){
+                                cubelist[user].velocity.x = mid(-MAX_SPEED, cubelist[user].velocity.x, 0);
+                                cubelist[user].accel.x = -MAX_ACCEL;
+                            }
+                            else{
+                                if(cubelist[user].velocity.x < 0){
+                                    cubelist[user].accel.x = MAX_ACCEL;
+                                }
+                            }
+                            break;
+                        case KEY_D:
+                            if(kev.value == 1){
+                                cubelist[user].velocity.x = mid(0, cubelist[user].velocity.x, MAX_SPEED);
+                                cubelist[user].accel.x = MAX_ACCEL;
+                            }
+                            else{
+                                if(cubelist[user].velocity.x > 0){
+                                    cubelist[user].accel.x = -MAX_ACCEL;
+                                }
+                            }
+                            break;
+                        case KEY_ESC:
+                            printf("out status ");
+                            cube_print(cubelist[user]);
+                            printf("\n");
+                            bufferevent_free(arg);
+                            event_base_loopexit(bufferevent_get_base(arg), NULL);
+                            break;
+                    }
+                }
+                else{
+                    break;
+                }
+            }
             for(int i = 0; i < MAX_PLAYER; i++){
                 if(user_in[i] == 0) continue;
                 cube_stepforward(&cubelist[i], 1);
@@ -112,7 +176,6 @@ void *pkgThread(void *arg){
                 buf[5] = user & 0xFF;
                 *((cube *)&buf[6]) = cubelist[user];
                 j+= sizeof(cube);
-                //printf("frame %ld:user %d at (%.2f,%.2f)\n", frame, user, cubelist[user].position.x, cubelist[user].position.y);
                 evbuffer_add(bufferevent_get_output(arg), buf, 6 + sizeof(cube));
             }
         }
@@ -124,9 +187,9 @@ void on_read(struct bufferevent *bev, void *arg){
     struct evbuffer *input = bufferevent_get_input(bev);
     char buf[MAXLEN];
     int flag = 0;
-    //uint32 sframe;
-    //long int sinterval;
-    //byte tmp;
+    uint32 sframe;
+    long int sinterval;
+    byte tmp;
 
     while(1){
         int j;
@@ -134,37 +197,49 @@ void on_read(struct bufferevent *bev, void *arg){
         if(flag <= 0) break;
         switch((byte)buf[0]){
             case SC_CONFIRM:
-                //printf("CONFIRM: ");
                 j = 0;
                 flag = evbuffer_remove(input, buf, sizeof(cube) + 8);
-                //printf("%d more bytes | ", flag);
                 pthread_mutex_lock(&mtx);
                 gettimeofday(&tvold, NULL);
                 frame = *((uint32 *)&buf[j]);
                 j += sizeof(uint32);
                 interval = *((long int *)&buf[j]);
                 j += sizeof(long int);
-                //printf("frame %ld + %ldms | ", frame, interval);
                 cubelist[user] = *((cube *)&buf[j]);
-                //printf("initial position (%.2f,%.2f)\n", cubelist[user].position.x, cubelist[user].position.y);
                 user_in[user] = 1;
                 pthread_create(&tid, NULL, pkgThread, bev);
                 pthread_mutex_unlock(&mtx);
             case SC_FLUSH:
-                /*j = 0;
-                evbuffer_remove(input, buf, sizeof(uint32) + sizeof(long int) + 1);
+                j = 0;
+                evbuffer_remove(input, buf, 9);
                 sframe = *((uint32 *)&buf[0]);
-                j += sizeof(uint32);
-                sinterval = *((long int *)&buf[j]);
-                j += sizeof(long int);
-                tmp = (byte)buf[j];
-                j++;
+                sinterval = *((long int *)&buf[4]);
+                tmp = (byte)buf[8];
+                j = 9;
                 pthread_mutex_lock(&mtx);
-                //memset(user_in, 0, sizeof(user_in));
+                memset(user_in, 0, sizeof(user_in));
+                user_in[user] = 1;
                 while(tmp--){
                     evbuffer_remove(input, buf, sizeof(cube) + 1);
                     if(buf[0] != user){
-                        cubelist[(int)buf[0]] = *((cube *)&buf[1]);
+                        cube tmpcube = *((cube *)&buf[1]);
+                        if(frame >= sframe){
+                            cube_stepforward(&tmpcube, frame - sframe);
+                        }
+                        else{
+                            cube_stepforward(&cubelist[(int)buf[0]], sframe - frame);
+                        }
+                        if(point_euclidean_distance(tmpcube.position, cubelist[(int)buf[0]].position, 2) > THRESHOLD){
+                            cubelist[(int)buf[0]].position.x /= 2;
+                            cubelist[(int)buf[0]].position.x += tmpcube.position.x / 2;
+                            cubelist[(int)buf[0]].position.y /= 2;
+                            cubelist[(int)buf[0]].position.y += tmpcube.position.y / 2;
+                            cubelist[(int)buf[0]].velocity = tmpcube.velocity;
+                            cubelist[(int)buf[0]].accel = tmpcube.accel;
+                        }
+                        else{
+                            cubelist[(int)buf[0]] = *((cube *)&buf[1]);
+                        }
                     }
                     user_in[(int)buf[0]] = 1;
                 }
@@ -174,7 +249,7 @@ void on_read(struct bufferevent *bev, void *arg){
                     cube_stepforward(&cubelist[user], sframe - frame);
                     frame = sframe;
                 }
-                pthread_mutex_unlock(&mtx);*/
+                pthread_mutex_unlock(&mtx);
                 break;
         }
     }
@@ -184,7 +259,6 @@ void on_event(struct bufferevent *bev, short event, void *arg){
     struct evbuffer *output = bufferevent_get_output(bev);
     struct event_base *base = bufferevent_get_base(bev);
     char buf[MAXLEN];
-    //printf("event begin:%d\n", event);
     if(event & BEV_EVENT_EOF){
         printf("Logged out.\n");
         pthread_cancel(tid);
@@ -204,11 +278,11 @@ void on_event(struct bufferevent *bev, short event, void *arg){
         evbuffer_add(output, buf, 2);
     }
 }
-/*
+
 void *SendingThread(void *arg){
     int kbdfd;
     struct input_event event;
-    //struct evbuffer *output = bufferevent_get_output(arg);
+    keyevent kev;
 
     kbdfd = open("/dev/input/event1", O_RDONLY);
     if(kbdfd < 0){
@@ -219,29 +293,16 @@ void *SendingThread(void *arg){
         if(read(kbdfd, &event, sizeof(event)) == sizeof(event)){
             if(event.type == EV_KEY && event.value != 2){
                 pthread_mutex_lock(&mtx);
-                switch(event.code){
-                    case KEY_W:
-                        printf("KEY  UP   %d\n", event.value);
-                        break;
-                    case KEY_S:
-                        printf("KEY DOWN  %d\n", event.value);
-                        break;
-                    case KEY_A:
-                        printf("KEY LEFT  %d\n", event.value);
-                        break;
-                    case KEY_D:
-                        printf("KEY RIGHT %d\n", event.value);
-                        break;
-                    case KEY_ESC:
-                        bufferevent_free(arg);
-                        break;
-                }
+                kev.frame = frame;
+                kev.interval = interval;
+                kev.key = event.code;
+                kev.value = event.value;
+                keyevent_queue_enqueue(keyqueue, &kev);
                 pthread_mutex_unlock(&mtx);
             }
         }
     }
 }
-*/
 
 int main(int argc,char* argv[]){
     struct event_base *base;
@@ -288,7 +349,8 @@ int main(int argc,char* argv[]){
     }
 
     /*A thread that listen keybord*/
-    //pthread_create(&tid, NULL, SendingThread, bev);
+    keyqueue = keyevent_queue_new(1024);
+    pthread_create(&keytid, NULL, SendingThread, NULL);
 
     /*A thread that render with OpenGL*/
     pthread_create(&disptid, NULL, RenderThread, bev);

@@ -17,6 +17,7 @@ float mid(float x, float y, float z){
 	return min(max(x, y), z);
 }
 
+/*====================================*/
 point point_new(float x, float y){
 	point p;
 	p.x = x;
@@ -47,6 +48,7 @@ int point_intersect(point p1, point p2){
 	return 1;
 }
 
+/*====================================*/
 int cube_set_accel(cube *pkgptr, float x, float y){
 	if(!pkgptr) return 1;
 	pkgptr->accel.x = x;
@@ -55,20 +57,75 @@ int cube_set_accel(cube *pkgptr, float x, float y){
 }
 
 void cube_stepforward(cube *c, int steps){
+	point vold;
 	if(steps < 0){
 		return;
 	}
 	while(steps){
+		/*position change*/
 		c->position.x += c->velocity.x * DELTA_T;
-		c->position.x = mid(0, c->position.x, MAX_WIDTH - OBJ_WIDTH);
+		c->position.x = mid(-MAX_WIDTH, c->position.x, MAX_WIDTH - OBJ_WIDTH);
 		c->position.y += c->velocity.y * DELTA_T;
-		c->position.y = mid(0, c->position.y, MAX_HEIGHT - OBJ_WIDTH);
+		c->position.y = mid(-MAX_HEIGHT, c->position.y, MAX_HEIGHT - OBJ_WIDTH);
+		/*velocity change*/
+		vold = c->velocity;
 		c->velocity.x += c->accel.x * DELTA_T;
-		c->velocity.x = mid(0, c->velocity.x, MAX_SPEED);
 		c->velocity.y += c->accel.y * DELTA_T;
-		c->velocity.y = mid(0, c->velocity.y, MAX_SPEED);
-		c->accel.x = c->accel.x / 2;
-		c->accel.y = c->accel.y / 2;
+		if(vold.x > 0){
+			c->velocity.x = mid(0, c->velocity.x, MAX_SPEED);
+			if(c->velocity.x == MAX_SPEED || c->velocity.x == 0){
+				c->accel.x = 0;
+			}
+		}
+		else if(vold.x < 0){
+			c->velocity.x = mid(-MAX_SPEED, c->velocity.x, 0);
+			if(c->velocity.x == -MAX_SPEED || c->velocity.x == 0){
+				c->accel.x = 0;
+			}
+		}
+		else{
+			if(c->accel.x > 0){
+				c->velocity.x = mid(0, c->velocity.x, MAX_SPEED);
+				if(c->velocity.x == MAX_SPEED || c->velocity.x == 0){
+					c->accel.x = 0;
+				}
+			}
+			else if(c->accel.x < 0){
+				c->velocity.x = mid(-MAX_SPEED, c->velocity.x, 0);
+				if(c->velocity.x == -MAX_SPEED || c->velocity.x == 0){
+					c->accel.x = 0;
+				}
+			}
+		}
+		if(vold.y > 0){
+			c->velocity.y = mid(0, c->velocity.y, MAX_SPEED);
+			if(c->velocity.y == MAX_SPEED || c->velocity.y == 0){
+				c->accel.y = 0;
+			}
+		}
+		else if(vold.y < 0){
+			c->velocity.y = mid(-MAX_SPEED, c->velocity.y, 0);
+			if(c->velocity.y == -MAX_SPEED || c->velocity.y == 0){
+				c->accel.y = 0;
+			}
+		}
+		else{
+			if(c->accel.y > 0){
+				c->velocity.y = mid(0, c->velocity.y, MAX_SPEED);
+				if(c->velocity.y == MAX_SPEED || c->velocity.y == 0){
+					c->accel.y = 0;
+				}
+			}
+			else if(c->accel.y < 0){
+				c->velocity.y = mid(-MAX_SPEED, c->velocity.y, 0);
+				if(c->velocity.y == -MAX_SPEED || c->velocity.y == 0){
+					c->accel.y = 0;
+				}
+			}
+		}
+		/*accel change*/
+		c->accel.x = c->accel.x * (1 - MAX_ACCEL / (MAX_SPEED + 1));
+		c->accel.y = c->accel.y * (1 - MAX_ACCEL / (MAX_SPEED + 1));
 		steps--;
 	}
 }
@@ -90,10 +147,13 @@ int cube_remove_from_buffer(char *buf, size_t size, cube *cb){
 	return 0;
 }
 
-void cube_print(cube pkg){
-	//TODO
+void cube_print(cube cb){
+	printf("p(%.2f,%.2f) ", cb.position.x, cb.position.y);
+	printf("v(%.2f,%.2f) ", cb.velocity.x, cb.velocity.y);
+	printf("a(%.2f,%.2f)", cb.accel.x, cb.accel.y);
 }
 
+/*====================================*/
 cube_ptr cube_create_queue(){
 	cube_ptr head;
 	head = (cube_ptr)malloc(sizeof(cube_node));
@@ -155,6 +215,65 @@ void cube_print_queue(cube_ptr head){
 			}
 		}
 	}
+}
+
+/*====================================*/
+keyevent_queue_ptr keyevent_queue_new(uint32 size){
+	keyevent_queue_ptr queue = (keyevent_queue_ptr)malloc(sizeof(keyevent_queue));
+	if(!queue) return NULL;
+	if(size < 5){
+		size = 5;
+	}
+	queue->size = size;
+	queue->h = queue->r = 0;
+	queue->queue = (keyevent *)malloc(sizeof(keyevent) * (size + 1));
+	if(!queue->queue){
+		free(queue);
+		return NULL;
+	}
+	return queue;
+}
+
+int keyevent_queue_delete(keyevent_queue_ptr queue){
+	if(!queue) return 0;
+	if(queue->queue){
+		free(queue->queue);
+	}
+	free(queue);
+	return 0;
+}
+
+int keyevent_queue_isempty(keyevent_queue_ptr queue){
+	return (queue->h == queue->r)? 1:0;
+}
+
+int keyevent_queue_isfull(keyevent_queue_ptr queue){
+	return ((queue->r + 1) % (queue->size + 1) == queue->h)? 1:0;
+}
+
+int keyevent_queue_gethead(keyevent_queue_ptr queue, keyevent *event){
+	if(!queue) return 1;
+	if(!queue->queue) return 1;
+	if(keyevent_queue_isempty(queue)) return 1;
+	*event = queue->queue[queue->h];
+	return 0;
+}
+
+int keyevent_queue_enqueue(keyevent_queue_ptr queue, keyevent *event){
+	if(!queue) return 1;
+	if(!queue->queue) return 1;
+	if(keyevent_queue_isfull(queue)) return 1;
+	queue->queue[queue->r] = *event;
+	queue->r = (queue->r + 1) % (queue->size + 1);
+	return 0;
+}
+
+int keyevent_queue_dequeue(keyevent_queue_ptr queue, keyevent *event){
+	int flag;
+	flag = keyevent_queue_gethead(queue, event);
+	if(flag) return 1;
+	queue->h = (queue->h + 1) % (queue->size + 1);
+	return 0;
 }
 
 #ifdef UTIL_DEBUG
