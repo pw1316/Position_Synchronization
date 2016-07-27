@@ -72,10 +72,10 @@ void *pkgThread(void *arg){
 				//printf("UPDATE: frame %ld + %ldms | %d players in", frame, interval, tmp);
 				for(int i = 0; i < MAX_PLAYER; i++){
 					if(user_bev[i] == NULL) continue;
-					printf(" | %d", i);
+					//printf(" | %d", i);
 					evbuffer_add(bufferevent_get_output(user_bev[i]), buf, j);
 				}
-				printf("\n");
+				//printf("\n");
 			}
 		}
 		pthread_mutex_unlock(&mtx);
