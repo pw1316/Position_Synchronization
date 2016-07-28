@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/time.h>
+#include <time.h>
 
 float max(float x, float y){
 	return (x >= y)? x : y;
@@ -25,28 +25,21 @@ void printlog(FILE *fp, uint32 frame){
 	ctime_r(&tv.tv_sec, timestamp);
 	timestamp[strlen(timestamp) - 1] = '\0';
 	fprintf(fp, "[%s] frame %08lX | ", timestamp, frame);
-	fflush(fp);
 }
 
 /*====================================*/
 point point_new(float x, float y){
-	point p;
-	p.x = x;
-	p.y = y;
+	point p = {x, y};
 	return p;
 }
 
-void point_print(point p){
-	printf("(%.2f,%.2f)\n", p.x, p.y);
+void point_print(FILE *fp, point p){
+	fprintf(fp, "(%.2f,%.2f)", p.x, p.y);
 }
 
 float point_euclidean_distance(point p1, point p2, int base){
-	float x = p1.x - p2.x;
-	float y = p1.y - p2.y;
-	x = x * x;
-	y = y * y;
-	x = x + y;
-	return sqrtf(x);
+	float x = p1.x - p2.x, y = p1.y - p2.y;
+	return sqrtf(x * x + y * y);
 }
 
 int point_intersect(point p1, point p2){
@@ -69,9 +62,7 @@ int cube_set_accel(cube *pkgptr, float x, float y){
 
 void cube_stepforward(cube *c, int steps){
 	point vold;
-	if(steps < 0){
-		return;
-	}
+	if(steps < 0) return;
 	while(steps){
 		/*position change*/
 		c->position.x += c->velocity.x * DELTA_T;
@@ -141,91 +132,11 @@ void cube_stepforward(cube *c, int steps){
 	}
 }
 
-int cube_add_to_buffer(char *buf, size_t size, cube cb){
-	if(size < sizeof(cube)){
-		return 1;
-	}
-	memset(buf, 0, sizeof(cube));
-	*((cube *)&buf[0]) = cb;
-	return 0;
-}
-
-int cube_remove_from_buffer(char *buf, size_t size, cube *cb){
-	if(size < sizeof(cube)){
-		return 1;
-	}
-	*cb = *((cube *)&buf[0]);
-	return 0;
-}
-
 void cube_print(FILE *fp, cube cb){
 	fprintf(fp, "p(%.2f,%.2f) ", cb.position.x, cb.position.y);
 	fprintf(fp, "v(%.2f,%.2f) ", cb.velocity.x, cb.velocity.y);
 	fprintf(fp, "a(%.2f,%.2f)", cb.accel.x, cb.accel.y);
-}
-
-/*====================================*/
-cube_ptr cube_create_queue(){
-	cube_ptr head;
-	head = (cube_ptr)malloc(sizeof(cube_node));
-	if(!head) return NULL;
-	memset(head, 0, sizeof(cube_node));
-	head->next = NULL;
-	return head;
-}
-
-void cube_destroy_queue(cube_ptr head){
-	cube_ptr p = head;
-	while(head){
-		p = head;
-		head = head->next;
-		free(p);
-	}
-}
-
-int cube_node_enqueue(cube_ptr head, cube *pkgptr){
-	cube_ptr p, q;
-	if(!head) return -1;
-	p = head;
-	while(p->next) p = p->next;
-	q = (cube_ptr)malloc(sizeof(cube_node));
-	if(!q) return -2;
-	q->pkg = *pkgptr;
-	q->next = NULL;
-	p->next = q;
-	return 0;
-}
-
-int cube_node_dequeue(cube_ptr head, cube *pkgptr){
-	cube_ptr p, q;
-	if(!head) return -1;
-	if(!head->next) return -2;
-	p = head->next;
-	q = p->next;
-	head->next = q;
-	*pkgptr = p->pkg;
-	free(p);
-	return 0;
-}
-
-void cube_print_queue(cube_ptr head){
-	if(!head){
-		printf("Queue not exists!\n");
-	}
-	else{
-		cube_ptr p = head->next;
-		if(!p){
-			printf("Empty queue!\n");
-		}
-		else{
-			printf("Head->");
-			while(p){
-				if(p->next) printf("[(%.1f,%.1f),(%.1f,%.1f)]->", p->pkg.position.x, p->pkg.position.y, p->pkg.velocity.x, p->pkg.velocity.y);
-				else printf("[(%.1f,%.1f),(%.1f,%.1f)]\n", p->pkg.position.x, p->pkg.position.y, p->pkg.velocity.x, p->pkg.velocity.y);
-				p = p->next;
-			}
-		}
-	}
+	fflush(fp);
 }
 
 /*====================================*/

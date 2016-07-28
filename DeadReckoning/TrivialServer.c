@@ -18,13 +18,16 @@
 
 #include "util.h"
 
-cube cubelist[MAX_PLAYER];
+/*Sync data*/
 struct bufferevent *user_bev[MAX_PLAYER];
+cube cubelist[MAX_PLAYER];
+uint32 frame = 0;
+long int interval = 0;
+/*Multi-thread*/
 pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
 pthread_t tid;
-uint32 frame;
-long int interval = 0;
-FILE *logfile;
+/*Log*/
+FILE *logfile = NULL;
 
 void *pkgThread(void *arg){
 	struct timeval tv, tvold;
@@ -60,7 +63,6 @@ void *pkgThread(void *arg){
 				cube_stepforward(&cubelist[i], 1);
 				cube_print(logfile, cubelist[i]);
 				fprintf(logfile, "\n");
-				fflush(logfile);
 				tmp++;
 			}
 			if(frame % FRAMES_PER_UPDATE == 0){
@@ -85,8 +87,8 @@ void *pkgThread(void *arg){
 					evbuffer_add(bufferevent_get_output(user_bev[i]), buf, j);
 				}
 				fprintf(logfile, "\n");
-				fflush(logfile);
 			}
+			fflush(logfile);
 		}
 		pthread_mutex_unlock(&mtx);
 	}
@@ -105,85 +107,63 @@ void on_read(struct bufferevent *bev, void *arg){
 		if(flag <= 0) break;
 		switch((byte)buf[0]){
 			case CS_LOGIN:
-				flag = evbuffer_remove(input, buf, 1);
+				evbuffer_remove(input, buf, 1);
+				cuser = buf[0];
 				pthread_mutex_lock(&mtx);
 				printlog(logfile, frame);
-    			if(user_bev[(int)buf[0]]){
-    				fprintf(logfile, "user %d already in\n", buf[0]);
-    				bufferevent_free(bev);
-    			}
-    			else{
-    				int user = buf[0];
-    				fprintf(logfile, "user %d in | ", user);
-    				user_bev[user] = bev;
-    				bufferevent_enable(bev, EV_READ|EV_WRITE);
-    				sendbuf[0] = SC_CONFIRM;
-    				*((uint32 *)&sendbuf[1]) = frame;
-    				*((long int *)&sendbuf[5]) = interval;
-    				*((cube *)&sendbuf[9]) = cubelist[user];
-    				cube_print(logfile, cubelist[user]);
-    				fprintf(logfile, "\n");
-    				evbuffer_add(bufferevent_get_output(bev), sendbuf, sizeof(cube) + 9);
-    			}
-    			fflush(logfile);
-    			pthread_mutex_unlock(&mtx);
-    			break;
-    		case CS_UPDATE:
-    			flag = evbuffer_remove(input, buf, 5 + sizeof(cube));
-    			pthread_mutex_lock(&mtx);
-    			printlog(logfile, frame);
-    			cframe = *((uint32 *)&buf[0]);
-    			cuser = buf[4];
-    			fprintf(logfile, "server update from user %d, cframe %08lX, ", cuser, cframe);
-    			cube_print(logfile, *((cube *)&buf[5]));
-    			fprintf(logfile, "\n");
-    			fflush(logfile);
-    			if(frame >= cframe){
-    				cubelist[cuser] = *((cube *)&buf[5]);
-    				cube_stepforward(&cubelist[cuser], frame - cframe);
-    			}
-    			pthread_mutex_unlock(&mtx);
-    			break;
+				if(user_bev[cuser]){
+					fprintf(logfile, "user %d: already in\n", cuser);
+					bufferevent_free(bev);
+				}
+				else{
+					fprintf(logfile, "user %d: in ", cuser);
+					user_bev[cuser] = bev;
+					bufferevent_enable(bev, EV_READ|EV_WRITE);
+					sendbuf[0] = SC_CONFIRM;
+					*((uint32 *)&sendbuf[1]) = frame;
+					*((long int *)&sendbuf[5]) = interval;
+					*((cube *)&sendbuf[9]) = cubelist[cuser];
+					cube_print(logfile, cubelist[cuser]);
+					fprintf(logfile, "\n");
+					evbuffer_add(bufferevent_get_output(bev), sendbuf, sizeof(cube) + 9);
+				}
+				fflush(logfile);
+				pthread_mutex_unlock(&mtx);
+				break;
+			case CS_UPDATE:
+				flag = evbuffer_remove(input, buf, 5 + sizeof(cube));
+				pthread_mutex_lock(&mtx);
+				printlog(logfile, frame);
+				cframe = *((uint32 *)&buf[0]);
+				cuser = buf[4];
+				fprintf(logfile, "update from user %d: cframe %08lX, ", cuser, cframe);
+				cube_print(logfile, *((cube *)&buf[5]));
+				fprintf(logfile, "\n");
+				if(frame >= cframe){
+					cubelist[cuser] = *((cube *)&buf[5]);
+					cube_stepforward(&cubelist[cuser], frame - cframe);
+				}
+				fflush(logfile);
+				pthread_mutex_unlock(&mtx);
+				break;
 		}
 	}
 }
-/*
-void on_write(struct bufferevent *bev, void *arg){
-	struct evbuffer *output = bufferevent_get_output(bev);
-	cube pkg_in_queue[2];
-	int user;
-	pthread_mutex_lock(&mtx);
-	user = (bev == user_bev[1])? 1:0;
-	pthread_mutex_unlock(&mtx);
-	while(!queue[user << 1]->next);
-	pthread_mutex_lock(&mtx);
-	cube_node_dequeue(queue[user << 1], &pkg_in_queue[0]);
-	cube_node_dequeue(queue[(user << 1) | 1], &pkg_in_queue[1]);
-#ifdef SERVER_DEBUG
-	printf("SEND:\n");
-	printf("  0:");
-	cube_print(pkg_in_queue[0]);
-	printf("  1:");
-	cube_print(pkg_in_queue[1]);
-#endif
-	evbuffer_add(output, (char *)pkg_in_queue, sizeof(pkg_in_queue));
-	pthread_mutex_unlock(&mtx);
-}
-*/
+
 void on_event(struct bufferevent *bev, short int event, void *arg){
 	int user;
 	pthread_mutex_lock(&mtx);
 	for(int i = 0; i < MAX_PLAYER; i++){
-    	if(bev == user_bev[i]){
-    		user = i;
-    		break;
-    	}
-    }
+		if(bev == user_bev[i]){
+			user = i;
+			break;
+		}
+	}
 	pthread_mutex_unlock(&mtx);
     if(event & (BEV_EVENT_EOF | BEV_EVENT_ERROR)){
         pthread_mutex_lock(&mtx);
         printlog(logfile, frame);
-        fprintf(logfile, "user %d out | last status ", user);
+        fprintf(logfile, "user %d: out last status ", user);
         cube_print(logfile, cubelist[user]);
         fprintf(logfile, "\n");
         fflush(logfile);
@@ -205,9 +185,13 @@ void on_acc(struct evconnlistener *listener, evutil_socket_t fd, struct sockaddr
 	struct bufferevent *bev = bufferevent_socket_new(base, fd, BEV_OPT_CLOSE_ON_FREE);
 	struct sockaddr_in *sin = (struct sockaddr_in *)addr;
 	char str[MAXLEN];
-	inet_ntop(AF_INET, &sin->sin_addr, str, MAXLEN);
 
-	printf("ACK from %s:%d\n", str, ntohs(sin->sin_port));
+	inet_ntop(AF_INET, &sin->sin_addr, str, MAXLEN);
+	pthread_mutex_lock(&mtx);
+	printlog(logfile, frame);
+	fprintf(logfile, "ACK from %s: %d\n", str, ntohs(sin->sin_port));
+	fflush(logfile);
+	pthread_mutex_unlock(&mtx);
 	bufferevent_setcb(bev, on_read, NULL, on_event, arg);
 	bufferevent_enable(bev, EV_READ);
 }
@@ -216,7 +200,11 @@ void on_acc(struct evconnlistener *listener, evutil_socket_t fd, struct sockaddr
 void on_acc_error(struct evconnlistener *listener, void *arg){
 	struct event_base *base = evconnlistener_get_base(listener);
 	int err = EVUTIL_SOCKET_ERROR();
-	printf("Error %d(%s)\n", err, evutil_socket_error_to_string(err));
+	pthread_mutex_lock(&mtx);
+	printlog(logfile, frame);
+	printf("error on ACK %d(%s)\n", err, evutil_socket_error_to_string(err));
+	fflush(logfile);
+	pthread_mutex_unlock(&mtx);
 	event_base_loopexit(base, NULL);
 }
 
@@ -227,39 +215,59 @@ int main(){
 
 	memset(user_bev, 0, sizeof(user_bev));
 	logfile = fopen("server.log", "w");
+	if(!logfile){
+		printf("Server Down!\n");
+		return 1;
+	}
 	/*reading data from file*/
 	{
 		int fd,res,i;
 		char buf[MAXLEN];
+		printlog(logfile, frame);
+		fprintf(logfile, "opening ./data.db ... ");
 		fd = open("data.db", O_RDONLY);
 		if(fd < 0){
-			printf("File open error!\n");
+			fprintf(logfile, "failed[No such file!]\n");
+			printlog(logfile, frame);
+			fprintf(logfile, "closing ...\n");
+			fclose(logfile);
 			return 1;
 		}
+		fprintf(logfile, "successful\n");
+		printlog(logfile, frame);
+		fprintf(logfile, "reading from file ... ");
 		i = 0;
 		while(1){
 			res = read(fd, buf, sizeof(cube));
 			if(res == sizeof(cube)){
 				cubelist[i] = *((cube *)buf);
 				i++;
-				if(i >= 4) break;
+				if(i >= MAX_PLAYER) break;
 			}
 			else{
-				printf("Read failed!\n");
-				close(fd);
-				return 1;
+				break;
 			}
 		}
+		if(i < 4){
+			fprintf(logfile, "failed[No enough valid data!]\n");
+			fclose(logfile);
+			close(fd);
+			return 1;
+		}
+		fprintf(logfile, "successful\n");
 		close(fd);
 	}
-	printf("Read file done.\n");
 
 	/*new event base*/
+	printlog(logfile, frame);
+	fprintf(logfile, "creating event base ... ");
 	base = event_base_new();
 	if(!base){
-		printf("Get base failed!\n");
+		fprintf(logfile, "failed\n");
+		fclose(logfile);
 		return 1;
 	}
+	fprintf(logfile, "successful\n");
 
 	/*new listen address*/
 	memset(&sin, 0, sizeof(sin));
@@ -268,20 +276,24 @@ int main(){
 	sin.sin_port = htons(LISTEN_PORT);
 
 	/*new event listener*/
+	printlog(logfile, frame);
+	fprintf(logfile, "creating event listener ... ");
 	listener = evconnlistener_new_bind(base, on_acc, NULL, LEV_OPT_CLOSE_ON_FREE|LEV_OPT_REUSEABLE, 4, (struct sockaddr *)&sin, sizeof(sin));
 	if(!listener){
-		printf("Create listener failed!\n");
+		fprintf(logfile, "failed\n");
+		fclose(logfile);
 		return 1;
 	}
+	fprintf(logfile, "successful[Listening fd: %d]\n", evconnlistener_get_fd(listener));
+	fflush(logfile);
 	evconnlistener_set_error_cb(listener, on_acc_error);
 	evconnlistener_enable(listener);
-	printf("Listen fd:%d\n", evconnlistener_get_fd(listener));
+	printf("Server Started...\n");
 
 	/*Thread to broadcast status*/
 	pthread_create(&tid, NULL, pkgThread, NULL);
 
 	/*start polling*/
-	printf("Start polling...\n");
 	event_base_dispatch(base);
 	return 0;
 }
