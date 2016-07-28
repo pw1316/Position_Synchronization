@@ -35,25 +35,32 @@ void *pkgThread(void *arg){
 	gettimeofday(&tvold, NULL);
 	pthread_mutex_unlock(&mtx);
 	while(1){
-		usleep(1000);
-		pthread_mutex_lock(&mtx);
+		usleep(1);
 		gettimeofday(&tv, NULL);
 		tmp = (tv.tv_sec - tvold.tv_sec) * 1000000;
-		tmp += (tv.tv_usec - tvold.tv_usec);
-		interval += tmp / 1000;
-		if((frame % 3 != 0 && interval >= 330) || (frame % 3 == 0 && interval >= 340)){
+		tmp = tmp + tv.tv_usec - tvold.tv_usec;
+		interval = interval + tmp;
+		tvold = tv;
+		pthread_mutex_lock(&mtx);
+		if((frame % 3 != 0 && interval >= 33333) || (frame % 3 == 0 && interval >= 33334)){
 			if(frame %3 != 0){
-				interval -= 330;
+				interval -= 33333;
 			}
 			else{
-				interval -= 340;
+				interval -= 33334;
 			}
 			frame ++;
-			tvold = tv;
 			tmp = 0;
 			for(int i = 0; i < MAX_PLAYER; i++){
 				if(user_bev[i] == NULL) continue;
+				printlog(logfile, frame);
+				fprintf(logfile, "user %d: ", i);
+				cube_print(logfile, cubelist[i]);
+				fprintf(logfile, " -> ");
 				cube_stepforward(&cubelist[i], 1);
+				cube_print(logfile, cubelist[i]);
+				fprintf(logfile, "\n");
+				fflush(logfile);
 				tmp++;
 			}
 			if(frame % FRAMES_PER_UPDATE == 0){
@@ -70,13 +77,15 @@ void *pkgThread(void *arg){
 					*((cube *)&buf[j+1]) = cubelist[i];
 					j += sizeof(cube) + 1;
 				}
-				//printf("UPDATE: frame %ld + %ldms | %d players in", frame, interval, tmp);
+				printlog(logfile, frame);
+				fprintf(logfile, "server flush to %d users", tmp);
 				for(int i = 0; i < MAX_PLAYER; i++){
 					if(user_bev[i] == NULL) continue;
-					//printf(" | %d", i);
+					fprintf(logfile, " %d", i);
 					evbuffer_add(bufferevent_get_output(user_bev[i]), buf, j);
 				}
-				//printf("\n");
+				fprintf(logfile, "\n");
+				fflush(logfile);
 			}
 		}
 		pthread_mutex_unlock(&mtx);
@@ -96,38 +105,43 @@ void on_read(struct bufferevent *bev, void *arg){
 		if(flag <= 0) break;
 		switch((byte)buf[0]){
 			case CS_LOGIN:
-				printf("LOGIN: ");
 				flag = evbuffer_remove(input, buf, 1);
-				//printf("%d more bytes | ", flag);
 				pthread_mutex_lock(&mtx);
+				printlog(logfile, frame);
     			if(user_bev[(int)buf[0]]){
-    				printf("user %d already in\n", buf[0]);
+    				fprintf(logfile, "user %d already in\n", buf[0]);
     				bufferevent_free(bev);
     			}
     			else{
     				int user = buf[0];
-    				printf("user %d in\n", user);
+    				fprintf(logfile, "user %d in | ", user);
     				user_bev[user] = bev;
     				bufferevent_enable(bev, EV_READ|EV_WRITE);
     				sendbuf[0] = SC_CONFIRM;
     				*((uint32 *)&sendbuf[1]) = frame;
     				*((long int *)&sendbuf[5]) = interval;
-    				//printf("af frame %ld + %ldms | ", frame, interval);
     				*((cube *)&sendbuf[9]) = cubelist[user];
-    				//printf("at (%.2f,%.2f) | ", cubelist[user].position.x, cubelist[user].position.y);
-    				//printf("v (%.2f,%.2f) | ", cubelist[user].velocity.x, cubelist[user].velocity.y);
-    				//printf("a (%.2f,%.2f)\n", cubelist[user].accel.x, cubelist[user].accel.y);
+    				cube_print(logfile, cubelist[user]);
+    				fprintf(logfile, "\n");
     				evbuffer_add(bufferevent_get_output(bev), sendbuf, sizeof(cube) + 9);
     			}
+    			fflush(logfile);
     			pthread_mutex_unlock(&mtx);
     			break;
     		case CS_UPDATE:
     			flag = evbuffer_remove(input, buf, 5 + sizeof(cube));
     			pthread_mutex_lock(&mtx);
+    			printlog(logfile, frame);
     			cframe = *((uint32 *)&buf[0]);
     			cuser = buf[4];
-    			cubelist[cuser] = *((cube *)&buf[5]);
-    			cube_stepforward(&cubelist[cuser], frame - cframe);
+    			fprintf(logfile, "server update from user %d, cframe %08lX, ", cuser, cframe);
+    			cube_print(logfile, *((cube *)&buf[5]));
+    			fprintf(logfile, "\n");
+    			fflush(logfile);
+    			if(frame >= cframe){
+    				cubelist[cuser] = *((cube *)&buf[5]);
+    				cube_stepforward(&cubelist[cuser], frame - cframe);
+    			}
     			pthread_mutex_unlock(&mtx);
     			break;
 		}
@@ -166,21 +180,13 @@ void on_event(struct bufferevent *bev, short int event, void *arg){
     	}
     }
 	pthread_mutex_unlock(&mtx);
-    if(event & BEV_EVENT_EOF){
+    if(event & (BEV_EVENT_EOF | BEV_EVENT_ERROR)){
         pthread_mutex_lock(&mtx);
-        printf("LOGOUT: user %d out | last status ", user);
-        cube_print(cubelist[user]);
-        printf("\n");
-        bufferevent_free(bev);
-        user_bev[user] = NULL;
-        pthread_mutex_unlock(&mtx);
-    }
-    if(event & BEV_EVENT_ERROR){
-        printf("  event:Error!\n");
-        pthread_mutex_lock(&mtx);
-        printf("LOGOUT: user %d out | last status ", user);
-        cube_print(cubelist[user]);
-        printf("\n");
+        printlog(logfile, frame);
+        fprintf(logfile, "user %d out | last status ", user);
+        cube_print(logfile, cubelist[user]);
+        fprintf(logfile, "\n");
+        fflush(logfile);
         bufferevent_free(bev);
         user_bev[user] = NULL;
         pthread_mutex_unlock(&mtx);
@@ -220,7 +226,7 @@ int main(){
 	struct sockaddr_in sin;
 
 	memset(user_bev, 0, sizeof(user_bev));
-	logfd = open("server.log", O_CREAT|O_WRONLY, 0664);
+	logfile = fopen("server.log", "w");
 	/*reading data from file*/
 	{
 		int fd,res,i;

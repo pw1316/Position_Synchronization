@@ -31,6 +31,7 @@ uint32 frame;
 long int interval;
 struct timeval tv, tvold;
 keyevent_queue_ptr keyqueue;
+FILE *logfile;
 
 void display(){
     float x, y;
@@ -86,22 +87,21 @@ void *pkgThread(void *arg){
     keyevent kev;
 
     while(1){
-        usleep(1000);
+        usleep(1);
         pthread_mutex_lock(&mtx);
         gettimeofday(&tv, NULL);
         tmp = (tv.tv_sec - tvold.tv_sec) * 1000000;
-        tmp += (tv.tv_usec - tvold.tv_usec);
-        interval += tmp / 1000;
-        if((frame % 3 != 0 && interval >= 330) || (frame % 3 == 0 && interval >= 340)){
+        tmp = tmp + tv.tv_usec - tvold.tv_usec;
+        interval = interval + tmp;
+        tvold = tv;
+        if((frame % 3 != 0 && interval >= 33333) || (frame % 3 == 0 && interval >= 33334)){
             if(frame %3 != 0){
-                interval -= 330;
+                interval -= 33333;
             }
             else{
-                interval -= 340;
+                interval -= 33334;
             }
             frame ++;
-            tvold = tv;
-            tmp = 0;
             while(keyevent_queue_gethead(keyqueue, &kev) == 0){
                 if(kev.frame < frame){
                     keyevent_queue_dequeue(keyqueue, &kev);
@@ -152,7 +152,7 @@ void *pkgThread(void *arg){
                             break;
                         case KEY_ESC:
                             printf("out status ");
-                            cube_print(cubelist[user]);
+                            cube_print(stdout, cubelist[user]);
                             printf("\n");
                             bufferevent_free(arg);
                             event_base_loopexit(bufferevent_get_base(arg), NULL);
@@ -163,9 +163,17 @@ void *pkgThread(void *arg){
                     break;
                 }
             }
+            tmp = 0;
             for(int i = 0; i < MAX_PLAYER; i++){
                 if(user_in[i] == 0) continue;
+                printlog(logfile, frame);
+                fprintf(logfile, "user %d: ", i);
+                cube_print(logfile, cubelist[i]);
+                fprintf(logfile, " -> ");
                 cube_stepforward(&cubelist[i], 1);
+                cube_print(logfile, cubelist[i]);
+                fprintf(logfile, "\n");
+                fflush(logfile);
                 tmp++;
             }
             if(frame % FRAMES_PER_UPDATE == 0){
@@ -177,6 +185,8 @@ void *pkgThread(void *arg){
                 *((cube *)&buf[6]) = cubelist[user];
                 j+= sizeof(cube);
                 evbuffer_add(bufferevent_get_output(arg), buf, 6 + sizeof(cube));
+                printlog(logfile, frame);
+                fprintf(logfile, "client %d update to server\n", user);
             }
         }
         pthread_mutex_unlock(&mtx);
@@ -209,6 +219,7 @@ void on_read(struct bufferevent *bev, void *arg){
                 user_in[user] = 1;
                 pthread_create(&tid, NULL, pkgThread, bev);
                 pthread_mutex_unlock(&mtx);
+                break;
             case SC_FLUSH:
                 j = 0;
                 evbuffer_remove(input, buf, 9);
@@ -243,6 +254,8 @@ void on_read(struct bufferevent *bev, void *arg){
                     }
                     user_in[(int)buf[0]] = 1;
                 }
+                printlog(logfile, frame);
+                fprintf(logfile, "got server flush, sframe %08lX\n", sframe);
                 if(sframe > frame){
                     gettimeofday(&tvold, NULL);
                     interval = sinterval;
@@ -317,6 +330,7 @@ int main(int argc,char* argv[]){
     user = strtol(argv[2], NULL, 10);
     printf("User %d\n", user);
     memset(user_in, 0, sizeof(user_in));
+    logfile = fopen("client.log", "w");
 
     /*GL init*/
     glutInit(&argc, argv);

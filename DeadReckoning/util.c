@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
+#include <sys/time.h>
 
 float max(float x, float y){
 	return (x >= y)? x : y;
@@ -15,6 +15,17 @@ float min(float x, float y){
 
 float mid(float x, float y, float z){
 	return min(max(x, y), z);
+}
+
+void printlog(FILE *fp, uint32 frame){
+	struct timeval tv;
+	char timestamp[MAXLEN];
+
+	gettimeofday(&tv, NULL);
+	ctime_r(&tv.tv_sec, timestamp);
+	timestamp[strlen(timestamp) - 1] = '\0';
+	fprintf(fp, "[%s] frame %08lX | ", timestamp, frame);
+	fflush(fp);
 }
 
 /*====================================*/
@@ -147,10 +158,10 @@ int cube_remove_from_buffer(char *buf, size_t size, cube *cb){
 	return 0;
 }
 
-void cube_print(cube cb){
-	printf("p(%.2f,%.2f) ", cb.position.x, cb.position.y);
-	printf("v(%.2f,%.2f) ", cb.velocity.x, cb.velocity.y);
-	printf("a(%.2f,%.2f)", cb.accel.x, cb.accel.y);
+void cube_print(FILE *fp, cube cb){
+	fprintf(fp, "p(%.2f,%.2f) ", cb.position.x, cb.position.y);
+	fprintf(fp, "v(%.2f,%.2f) ", cb.velocity.x, cb.velocity.y);
+	fprintf(fp, "a(%.2f,%.2f)", cb.accel.x, cb.accel.y);
 }
 
 /*====================================*/

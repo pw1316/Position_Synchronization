@@ -1,6 +1,7 @@
 #ifndef __UTIL_H__
 #define __UTIL_H__
 
+#include <stdio.h>
 #include <time.h>
 
 /* ┌ ┐ └ ┘ ├ ┤ ┬ ┴ ┼ */
@@ -16,13 +17,13 @@
 /*max number of players*/
 #define MAX_PLAYER 4
 /*how often CS communicate*/
-#define FRAMES_PER_UPDATE 3
+#define FRAMES_PER_UPDATE 5
 /*time 1 frame takes for game*/
 #define DELTA_T 1
 /*max speed*/
-#define MAX_SPEED 1.5f
+#define MAX_SPEED 2.0f
 /*accel*/
-#define MAX_ACCEL 0.2f
+#define MAX_ACCEL 0.3f
 /*Threshold*/
 #define THRESHOLD 1
 
@@ -49,6 +50,8 @@ typedef unsigned long int uint32;
 float max(float x, float y);
 float min(float x, float y);
 float mid(float x, float y, float z);
+/*Not Thread Safe,Please Use Locks*/
+void printlog(FILE *fp, uint32 frame);
 
 /*====================================*/
 struct __point{
@@ -76,7 +79,7 @@ int cube_set_accel(cube *pkgptr, float x, float y);
 void cube_stepforward(cube *c, int steps);
 int cube_add_to_buffer(char *buf, size_t size, cube cb);
 int cube_remove_from_buffer(char *buf, size_t size, cube *cb);
-void cube_print(cube cb);
+void cube_print(FILE *fp, cube cb);
 
 /*====================================*/
 struct __cube_node;
