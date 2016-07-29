@@ -315,7 +315,7 @@ void on_read(struct bufferevent *bev, void *arg){
 					frame++;
 					if(frame % FRAMES_PER_UPDATE == 0){ 
 						char sendbuf[MAXLEN];
-	   					int j;
+						int j;
 						sendbuf[0] = CS_UPDATE;
 						*((uint32 *)&sendbuf[1]) = frame;
 						sendbuf[5] = user & 0xFF;
