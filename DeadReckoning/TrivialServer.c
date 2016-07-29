@@ -161,6 +161,7 @@ void on_event(struct bufferevent *bev, short int event, void *arg){
 	}
 	pthread_mutex_unlock(&mtx);
     if(event & (BEV_EVENT_EOF | BEV_EVENT_ERROR)){
+    	int fd, flag;
         pthread_mutex_lock(&mtx);
         printlog(logfile, frame);
         fprintf(logfile, "user %d: out last status ", user);
@@ -169,6 +170,11 @@ void on_event(struct bufferevent *bev, short int event, void *arg){
         fflush(logfile);
         bufferevent_free(bev);
         user_bev[user] = NULL;
+        fd = open("data.db", O_WRONLY);
+        lseek(fd, user * sizeof(cube), SEEK_SET);
+        flag = write(fd, (char *)&cubelist[user], sizeof(cube));
+        printf("%d\n", flag);
+        close(fd);
         pthread_mutex_unlock(&mtx);
     }
     if(event & BEV_EVENT_TIMEOUT){
