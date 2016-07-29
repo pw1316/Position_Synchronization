@@ -45,12 +45,12 @@ void *pkgThread(void *arg){
 		interval = interval + tmp;
 		tvold = tv;
 		pthread_mutex_lock(&mtx);
-		if((frame % 3 != 0 && interval >= 33333) || (frame % 3 == 0 && interval >= 33334)){
-			if(frame %3 != 0){
-				interval -= 33333;
+		if((frame % 6 < 2 && interval >= 16666) || (frame % 6 >= 0 && interval >= 16667)){
+			if(frame % 6 < 2){
+				interval -= 16666;
 			}
 			else{
-				interval -= 33334;
+				interval -= 16667;
 			}
 			frame ++;
 			tmp = 0;

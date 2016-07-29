@@ -135,12 +135,12 @@ void *pkgThread(void *arg){
 		tmp = tmp + tv.tv_usec - tvold.tv_usec;
 		interval = interval + tmp;
 		tvold = tv;
-		if((frame % 3 != 0 && interval >= 33333) || (frame % 3 == 0 && interval >= 33334)){
-			if(frame %3 != 0){
-				interval -= 33333;
+		if((frame % 6 < 2 && interval >= 16666) || (frame % 6 >= 0 && interval >= 16667)){
+			if(frame % 6 < 2){
+				interval -= 16666;
 			}
 			else{
-				interval -= 33334;
+				interval -= 16667;
 			}
 			frame ++;
 			while(keyevent_queue_gethead(keyqueue, &kev) == 0){
@@ -244,6 +244,7 @@ void on_read(struct bufferevent *bev, void *arg){
 	long int sinterval;
 	byte tmp;
 
+	usleep(100000);
 	while(1){
 		int j;
 		flag = evbuffer_remove(input, buf, 1);
