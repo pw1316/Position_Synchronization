@@ -292,13 +292,15 @@ void on_read(struct bufferevent *bev, void *arg){
 						else{
 							cube_stepforward(&cubelist[(int)buf[0]], sframe - frame);
 						}
+						cube_stepforward(&tmpcube, 5);
 						if(point_euclidean_distance(tmpcube.position, cubelist[(int)buf[0]].position, 2) > THRESHOLD){
-							cubelist[(int)buf[0]].position.x /= 2;
-							cubelist[(int)buf[0]].position.x += tmpcube.position.x / 2;
-							cubelist[(int)buf[0]].position.y /= 2;
-							cubelist[(int)buf[0]].position.y += tmpcube.position.y / 2;
-							cubelist[(int)buf[0]].velocity = tmpcube.velocity;
-							cubelist[(int)buf[0]].accel = tmpcube.accel;
+							float dx = tmpcube.position.x - cubelist[(int)buf[0]].position.x;
+							float dy = tmpcube.position.y - cubelist[(int)buf[0]].position.y;
+							float mm = max(abs(dx), abs(dy));
+							cubelist[(int)buf[0]].velocity.x = dx / mm * min(MAX_SPEED, mm / 5);
+							cubelist[(int)buf[0]].velocity.y = dy / mm * min(MAX_SPEED, mm / 5);
+							cubelist[(int)buf[0]].accel.x = 0.0f;
+							cubelist[(int)buf[0]].accel.y = 0.0f;
 						}
 						else{
 							cubelist[(int)buf[0]] = *((cube *)&buf[1]);
