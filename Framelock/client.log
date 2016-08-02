@@ -1,0 +1,7 @@
+[Tue Aug  2 03:53:46 2016] frame FFFFFFFF | checking host ... successful
+[Tue Aug  2 03:53:46 2016] frame FFFFFFFF | checking user ... 0
+[Tue Aug  2 03:53:46 2016] frame FFFFFFFF | creating event base ... successful
+[Tue Aug  2 03:53:46 2016] frame FFFFFFFF | creating buffer event ... successful
+[Tue Aug  2 03:53:46 2016] frame FFFFFFFF | creating keybord queue ... successful
+[Tue Aug  2 03:53:46 2016] frame FFFFFFFF | connecting to server ... successful
+[Tue Aug  2 03:53:46 2016] frame FFFFFFFF | user 0: in ... waiting for others ...
