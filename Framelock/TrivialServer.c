@@ -1,7 +1,9 @@
 #include <arpa/inet.h>
+#include <linux/input.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
@@ -21,10 +23,11 @@
 /*Sync data*/
 struct bufferevent *user_bev[MAX_PLAYER];
 cube cubelist[MAX_PLAYER];
+keyevent_queue_ptr user_ev[MAX_PLAYER];
 uint32 update_in = 0xFFFFFFFF;
 uint32 user_in = 0;
-uint32 frame = 0;
-long int interval = 0;
+uint32 frame = 0xFFFFFFFF;
+long int interval = 33333;
 /*Multi-thread*/
 pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
 pthread_t tid;
@@ -35,18 +38,18 @@ void *pkgThread(void *arg){
 	struct timeval tv, tvold, timeoutbase, timeout;
 	int tmp = 0;
 	char buf[MAXLEN];
+	keyevent kev;
 
 	pthread_mutex_lock(&mtx);
 	buf[0] = SC_START;
 	buf[1] = MAX_PLAYER;
 	for(int i = 0; i < MAX_PLAYER; i++){
-		buf[i * 9 + 2] = i;
-		*((cube *)&buf[i * 9 + 3]) = cubelist[i];
+		buf[i * 33 + 2] = i;
+		*((cube *)&buf[i * 33 + 3]) = cubelist[i];
 	}
 	for(int i = 0; i < MAX_PLAYER; i++){
-		evbuffer_add(bufferevent_get_output(user_bev[i]), buf, 2 + 9 * MAX_PLAYER);
+		evbuffer_add(bufferevent_get_output(user_bev[i]), buf, 2 + 33 * MAX_PLAYER);
 	}
-	frame = 0;
 	gettimeofday(&tvold, NULL);
 	pthread_mutex_unlock(&mtx);
 	while(1){
@@ -67,7 +70,73 @@ void *pkgThread(void *arg){
 			frame ++;
 			if(frame % FRAMES_PER_UPDATE == 0){
 				if(update_in == 0xFFFFFFFF){
-					//TODO:flush
+					int j = 5;
+					buf[0] = SC_FLUSH;
+					*((uint32 *)&buf[1]) = frame;
+					for(int i = 0; i < MAX_PLAYER; i++){
+						keyevent kev;
+						if(user_bev[i] == NULL) continue;
+						while(keyevent_queue_isempty(user_ev[i]) == 0){
+							keyevent_queue_dequeue(user_ev[i], &kev);
+							buf[j] = i;
+							*((keyevent *)&buf[j + 1]) = kev;
+							j += 1 + sizeof(keyevent);
+							switch(kev.key){
+								case KEY_W:
+									if(kev.value == 1){
+										cubelist[i].velocity.y = mid(0, cubelist[i].velocity.y, MAX_SPEED);
+										cubelist[i].accel.y = MAX_ACCEL;
+									}
+									else{
+										if(cubelist[i].velocity.y > 0){
+											cubelist[i].accel.y = -MAX_ACCEL;
+										}
+									}
+									break;
+								case KEY_S:
+									if(kev.value == 1){
+										cubelist[i].velocity.y = mid(-MAX_SPEED, cubelist[i].velocity.y, 0);
+										cubelist[i].accel.y = -MAX_ACCEL;
+									}
+									else{
+										if(cubelist[i].velocity.y < 0){
+											cubelist[i].accel.y = MAX_ACCEL;
+										}
+									}
+									break;
+								case KEY_A:
+									if(kev.value == 1){
+										cubelist[i].velocity.x = mid(-MAX_SPEED, cubelist[i].velocity.x, 0);
+										cubelist[i].accel.x = -MAX_ACCEL;
+									}
+									else{
+										if(cubelist[i].velocity.x < 0){
+											cubelist[i].accel.x = MAX_ACCEL;
+										}
+									}
+									break;
+								case KEY_D:
+									if(kev.value == 1){
+										cubelist[i].velocity.x = mid(0, cubelist[i].velocity.x, MAX_SPEED);
+										cubelist[i].accel.x = MAX_ACCEL;
+									}
+									else{
+										if(cubelist[i].velocity.x > 0){
+											cubelist[i].accel.x = -MAX_ACCEL;
+										}
+									}
+									break;
+							}
+						}
+					}
+					kev.value = 2;
+					buf[j] = MAX_PLAYER;
+					*((keyevent *)&buf[j + 1]) = kev;
+					j += 1 + sizeof(keyevent);
+					for(int i = 0; i < MAX_PLAYER; i++){
+						if(user_bev[i] == NULL) continue;
+						evbuffer_add(bufferevent_get_output(user_bev[i]), buf, j);
+					}
 					for(int i = 0; i < MAX_PLAYER; i++){
 						if(user_bev[i] == NULL) continue;
 						printlog(logfile, frame);
@@ -99,7 +168,73 @@ void *pkgThread(void *arg){
 					}
 					if(update_in == 0xFFFFFFFF){
 						gettimeofday(&tvold, NULL);
-						//TODO:flush
+						int j = 5;
+						buf[0] = SC_FLUSH;
+						*((uint32 *)&buf[1]) = frame;
+						for(int i = 0; i < MAX_PLAYER; i++){
+							keyevent kev;
+							if(user_bev[i] == NULL) continue;
+							while(keyevent_queue_isempty(user_ev[i]) == 0){
+								keyevent_queue_dequeue(user_ev[i], &kev);
+								buf[j] = i;
+								*((keyevent *)&buf[j + 1]) = kev;
+								j += 1 + sizeof(keyevent);
+								switch(kev.key){
+									case KEY_W:
+										if(kev.value == 1){
+											cubelist[i].velocity.y = mid(0, cubelist[i].velocity.y, MAX_SPEED);
+											cubelist[i].accel.y = MAX_ACCEL;
+										}
+										else{
+											if(cubelist[i].velocity.y > 0){
+												cubelist[i].accel.y = -MAX_ACCEL;
+											}
+										}
+										break;
+									case KEY_S:
+										if(kev.value == 1){
+											cubelist[i].velocity.y = mid(-MAX_SPEED, cubelist[i].velocity.y, 0);
+											cubelist[i].accel.y = -MAX_ACCEL;
+										}
+										else{
+											if(cubelist[i].velocity.y < 0){
+												cubelist[i].accel.y = MAX_ACCEL;
+											}
+										}
+										break;
+									case KEY_A:
+										if(kev.value == 1){
+											cubelist[i].velocity.x = mid(-MAX_SPEED, cubelist[i].velocity.x, 0);
+											cubelist[i].accel.x = -MAX_ACCEL;
+										}
+										else{
+											if(cubelist[i].velocity.x < 0){
+												cubelist[i].accel.x = MAX_ACCEL;
+											}
+										}
+										break;
+									case KEY_D:
+										if(kev.value == 1){
+											cubelist[i].velocity.x = mid(0, cubelist[i].velocity.x, MAX_SPEED);
+											cubelist[i].accel.x = MAX_ACCEL;
+										}
+										else{
+											if(cubelist[i].velocity.x > 0){
+												cubelist[i].accel.x = -MAX_ACCEL;
+											}
+										}
+										break;
+								}
+							}
+						}
+						kev.value = 2;
+						buf[j] = MAX_PLAYER;
+						*((keyevent *)&buf[j + 1]) = kev;
+						j += 1 + sizeof(keyevent);
+						for(int i = 0; i < MAX_PLAYER; i++){
+							if(user_bev[i] == NULL) continue;
+							evbuffer_add(bufferevent_get_output(user_bev[i]), buf, j);
+						}
 						for(int i = 0; i < MAX_PLAYER; i++){
 							if(user_bev[i] == NULL) continue;
 							printlog(logfile, frame);
@@ -190,6 +325,8 @@ void on_read(struct bufferevent *bev, void *arg){
 					fprintf(logfile, "\n");
 					evbuffer_add(bufferevent_get_output(bev), sendbuf, 1);
 					if(user_in == MAX_PLAYER){
+						printlog(logfile, frame);
+						fprintf(logfile, "all user in starting...\n");
 						/*Thread to broadcast status*/
 						pthread_create(&tid, NULL, pkgThread, NULL);
 					}
@@ -198,18 +335,26 @@ void on_read(struct bufferevent *bev, void *arg){
 				pthread_mutex_unlock(&mtx);
 				break;
 			case CS_UPDATE:
-				flag = evbuffer_remove(input, buf, 5 + sizeof(cube));
+				evbuffer_remove(input, buf, 5);
 				pthread_mutex_lock(&mtx);
 				printlog(logfile, frame);
 				cframe = *((uint32 *)&buf[0]);
 				cuser = buf[4];
+				assert(cuser < MAX_PLAYER);
+				update_in |= 1 << cuser;
 				fprintf(logfile, "update from user %d: cframe %08lX, ", cuser, cframe);
-				cube_print(logfile, *((cube *)&buf[5]));
-				fprintf(logfile, "\n");
-				if(frame >= cframe){
-					cubelist[cuser] = *((cube *)&buf[5]);
-					cube_stepforward(&cubelist[cuser], frame - cframe);
+				while(1){
+					keyevent kev;
+					evbuffer_remove(input, buf, sizeof(keyevent));
+					kev = *((keyevent *)&buf[0]);
+					if(kev.value != 2){
+						keyevent_queue_enqueue(user_ev[cuser], &kev);
+					}
+					else{
+						break;
+					}
 				}
+				fprintf(logfile, "\n");
 				fflush(logfile);
 				pthread_mutex_unlock(&mtx);
 				break;
@@ -330,6 +475,19 @@ int main(){
 		}
 		fprintf(logfile, "successful\n");
 		close(fd);
+	}
+
+	/*new event queue*/
+	for(int i = 0; i < MAX_PLAYER; i++){
+		printlog(logfile, frame);
+		fprintf(logfile, "creating keybord queue %d ... ", i);
+		user_ev[i] = keyevent_queue_new(1024);
+		if(!user_ev[i]){
+			fprintf(logfile, "failed\n");
+			fclose(logfile);
+			return 1;
+		}
+		fprintf(logfile, "successful\n");
 	}
 
 	/*new event base*/
