@@ -44,7 +44,7 @@ typedef unsigned long int uint32;
 float max(float x, float y);
 float min(float x, float y);
 float mid(float x, float y, float z);
-void printlog(FILE *fp, uint32 frame);//Not thread safe
+void printlog(FILE *fp, uint32 frame, const char *format, ...);//Not thread safe
 
 /*====================================*/
 struct __point{

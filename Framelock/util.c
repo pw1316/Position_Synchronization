@@ -1,5 +1,6 @@
 #include "util.h"
 #include <math.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,14 +18,17 @@ float mid(float x, float y, float z){
 	return min(max(x, y), z);
 }
 
-void printlog(FILE *fp, uint32 frame){
+void printlog(FILE *fp, uint32 frame, const char *format, ...){
 	struct timeval tv;
 	char timestamp[MAXLEN];
-
+	va_list args;
+	va_start(args, format);
 	gettimeofday(&tv, NULL);
 	ctime_r(&tv.tv_sec, timestamp);
 	timestamp[strlen(timestamp) - 1] = '\0';
 	fprintf(fp, "[%s] frame %08lX | ", timestamp, frame);
+	vfprintf(fp, format, args);
+	va_end(args);
 }
 
 /*====================================*/
@@ -201,18 +205,8 @@ int keyevent_queue_dequeue(keyevent_queue_ptr queue, keyevent *event){
 #ifdef UTIL_DEBUG
 
 int main(){
-	time_t t = time(NULL);
-	float a, b, c;
-	point p, q;
-
-	srand(t);
-	a = rand() * 1.0f / RAND_MAX * 10;
-	b = rand() * 1.0f / RAND_MAX * 10;
-	p = point_new(5, 0);
-	q = point_new(0, 12);
-	point_print(p);
-	point_print(q);
-	printf("%.2f\n", point_euclidean_distance(p, q, 2));
+	int i = 2;
+	printlog(stdout, 0, "lalala%d\n", i);
 }
 
 #endif

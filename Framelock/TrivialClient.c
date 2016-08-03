@@ -96,12 +96,13 @@ void *SendingThread(void *arg){
 
 	pthread_mutex_lock(&mtx);
 	/*Open keyboard*/
-	printlog(logfile, frame);
-	fprintf(logfile, "opening keyboard ... ");
+	printlog(logfile, frame, "opening keyboard ... ");
 	kbdfd = open("/dev/input/event1", O_RDONLY);//Should ajust according to actual keyboard device
 	if(kbdfd < 0){
 		fprintf(logfile, "failed[Permission denied!]\n");
 		fflush(logfile);
+		pthread_mutex_unlock(&mtx);
+		pthread_cond_signal(&cond);
 		return NULL;
 	}
 	fprintf(logfile, "successful\n");
@@ -147,20 +148,22 @@ void *pkgThread(void *arg){
 			}
 			frame ++;
 			if(frame % FRAMES_PER_UPDATE == 0){
+				int flag = 0;
 				while(stall){
+					flag = 1;
 					pthread_mutex_unlock(&mtx);
 					usleep(1000);
 					pthread_mutex_lock(&mtx);
 				}
-				printlog(logfile, frame);
-				fprintf(logfile, "gogogo\n");
+				if(flag){
+					printlog(logfile, frame, "stall occured\n");
+				}
 				stall = 1;
 			}
 			tmp = 0;
 			for(int i = 0; i < MAX_PLAYER; i++){
 				if(user_in[i] == 0) continue;
-				printlog(logfile, frame);
-				fprintf(logfile, "user %d: ", i);
+				printlog(logfile, frame, "user %d: ", i);
 				cube_print(logfile, cubelist[i]);
 				fprintf(logfile, " -> ");
 				cube_stepforward(&cubelist[i], 1);
@@ -180,7 +183,7 @@ void on_read(struct bufferevent *bev, void *arg){
 	int flag = 0;
 	uint32 sframe;
 	byte tmp;
-	int j;
+	keyevent kev;
 
 	while(1){
 		int j;
@@ -191,8 +194,7 @@ void on_read(struct bufferevent *bev, void *arg){
 				pthread_mutex_lock(&mtx);
 				gettimeofday(&tvold, NULL);
 				user_in[(int)buf[0]] = 1;
-				printlog(logfile, frame);
-				fprintf(logfile, "user %d: in ... waiting for others ...\n", user);
+				printlog(logfile, frame, "user %d: in ... waiting for others ...\n", user);
 				fflush(logfile);
 				pthread_mutex_unlock(&mtx);
 				break;
@@ -204,6 +206,7 @@ void on_read(struct bufferevent *bev, void *arg){
 					cubelist[(int)buf[0]] = *((cube *)&buf[1]);
 					user_in[(int)buf[0]] = 1;
 				}
+				printlog(logfile, frame, "start running ...\n");
 				pthread_create(&disptid, NULL, RenderThread, NULL);
 				pthread_create(&tid, NULL, pkgThread, bev);
 				break;
@@ -211,25 +214,17 @@ void on_read(struct bufferevent *bev, void *arg){
 				evbuffer_remove(input, buf, 4);
 				sframe = *((uint32 *)&buf[0]);
 				pthread_mutex_lock(&mtx);
-				printlog(logfile, frame);
-				fprintf(logfile, "server flush %ld\n", sframe);
+				printlog(logfile, frame, "server flush %08lX\n", sframe);
 				if(sframe > frame){
 					for(int i = 0; i < MAX_PLAYER; i++){
 						if(user_in[i] == 0) continue;
-						printlog(logfile, frame);
-						fprintf(logfile, "user %d: ", i);
-						cube_print(logfile, cubelist[i]);
-						fprintf(logfile, " -> ");
 						cube_stepforward(&cubelist[i], sframe - frame - 1);
-						cube_print(logfile, cubelist[i]);
-						fprintf(logfile, "\n");
 					}
 					frame = sframe - 1;
 					interval = 33333;
 					gettimeofday(&tvold, NULL);
 				}
 				while(1){
-					keyevent kev;
 					int cuser;
 					evbuffer_remove(input, buf, 1 + sizeof(keyevent));
 					if(buf[0] == MAX_PLAYER) break;
@@ -282,8 +277,8 @@ void on_read(struct bufferevent *bev, void *arg){
 							break;
 					}
 				}
-				keyevent kev;
 				stall = 0;
+				printlog(logfile, frame, "update to server.\n");
 				buf[0] = CS_UPDATE;
 				*((uint32 *)&buf[1]) = frame;
 				buf[5] = user;
@@ -310,8 +305,7 @@ void on_event(struct bufferevent *bev, short event, void *arg){
 	char buf[MAXLEN];
 	if(event & BEV_EVENT_EOF){
 		pthread_mutex_lock(&mtx);
-		printlog(logfile, frame);
-		fprintf(logfile, "server down\n");
+		printlog(logfile, frame, "server down\n");
 		fflush(logfile);
 		bufferevent_free(bev);
 		pthread_cancel(disptid);
@@ -358,8 +352,7 @@ int main(int argc,char* argv[]){
 	}
 
 	/*new server address(argv[1])*/
-	printlog(logfile, frame);
-	fprintf(logfile, "checking host ... ");
+	printlog(logfile, frame, "checking host ... ");
 	memset(&sin, 0, sizeof(sin));
 	sin.sin_family = AF_INET;
 	sin.sin_port = htons(LISTEN_PORT);
@@ -372,11 +365,9 @@ int main(int argc,char* argv[]){
 	fprintf(logfile, "successful\n");
 
 	/*user(argv[2])*/
-	printlog(logfile, frame);
-	fprintf(logfile, "checking user ... ");
 	user = strtol(argv[2], NULL, 10);
+	printlog(logfile, frame, "checking user ... %d\n", user);
 	memset(user_in, 0, sizeof(user_in));
-	fprintf(logfile, "%d\n", user);
 
 	/*GL init*/
 	glutInit(&argc, argv);
@@ -385,8 +376,7 @@ int main(int argc,char* argv[]){
 	glutInitWindowSize(600, 400);
 
 	/*new event base*/
-	printlog(logfile, frame);
-	fprintf(logfile, "creating event base ... ");
+	printlog(logfile, frame, "creating event base ... ");
 	base = event_base_new();
 	if(!base){
 		fprintf(logfile, "failed\n");
@@ -396,8 +386,7 @@ int main(int argc,char* argv[]){
 	fprintf(logfile, "successful\n");
 
 	/*new buffer event*/
-	printlog(logfile, frame);
-	fprintf(logfile, "creating buffer event ... ");
+	printlog(logfile, frame, "creating buffer event ... ");
 	bev = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
 	if(!bev){
 		fprintf(logfile, "failed\n");
@@ -407,8 +396,7 @@ int main(int argc,char* argv[]){
 	fprintf(logfile, "successful\n");
 
 	/*new keyboard queue*/
-	printlog(logfile, frame);
-	fprintf(logfile, "creating keybord queue ... ");
+	printlog(logfile, frame, "creating keybord queue ... ");
 	keyqueue = keyevent_queue_new(1024);
 	if(!keyqueue){
 		fprintf(logfile, "failed\n");
@@ -427,8 +415,7 @@ int main(int argc,char* argv[]){
 	//pthread_create(&disptid, NULL, RenderThread, NULL);
 
 	/*Connect to server*/
-	printlog(logfile, frame);
-	fprintf(logfile, "connecting to server ... ");
+	printlog(logfile, frame, "connecting to server ... ");
 	fd = bufferevent_socket_connect(bev, (struct sockaddr*)&sin, sizeof(sin));
 	if(fd < 0){
 		fprintf(logfile, "failed\n");
