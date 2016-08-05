@@ -25,6 +25,8 @@
 /*Sync data*/
 byte user_in[MAX_PLAYER];
 cube cubelist[MAX_PLAYER];
+int chazhi[MAX_PLAYER];
+cube chazhidst[MAX_PLAYER];
 uint32 frame;
 long int interval;
 struct timeval tv, tvold;
@@ -34,7 +36,9 @@ pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
 pthread_t tid, disptid, keytid;
 /*Log*/
+#ifdef LOGFILE
 FILE *logfile = NULL;
+#endif
 /*Key board*/
 keyevent_queue_ptr keyqueue = NULL;
 
@@ -84,6 +88,7 @@ void *RenderThread(void *arg){
 	gluLookAt(0, 0, 10, 0, 0, 0, 0, 1, 0);
 	glutDisplayFunc(display);
 	glutReshapeFunc(reshape);
+	//glutLeaveMainLoop();
 	glutMainLoop();
 	return NULL;
 }
@@ -95,16 +100,18 @@ void *SendingThread(void *arg){
 
 	pthread_mutex_lock(&mtx);
 	/*Open keyboard*/
-	printlog(logfile, frame);
-	fprintf(logfile, "opening keyboard ... ");
 	kbdfd = open("/dev/input/event1", O_RDONLY);//Should ajust according to actual keyboard device
 	if(kbdfd < 0){
-		fprintf(logfile, "failed[Permission denied!]\n");
-		fflush(logfile);
+		#ifdef LOGFILE
+		printlog(logfile, frame, "opening keyboard ... failed[Permission denied!]\n");
+		#endif
+		pthread_mutex_unlock(&mtx);
+		pthread_cond_signal(&cond);
 		return NULL;
 	}
-	fprintf(logfile, "successful\n");
-	fflush(logfile);
+	#ifdef LOGFILE
+	printlog(logfile, frame, "opening keyboard ... successful\n");
+	#endif
 	assert(keyqueue != NULL);
 	pthread_mutex_unlock(&mtx);
 	pthread_cond_signal(&cond);
@@ -135,70 +142,37 @@ void *pkgThread(void *arg){
 		tmp = tmp + tv.tv_usec - tvold.tv_usec;
 		interval = interval + tmp;
 		tvold = tv;
-		if((frame % 6 < 2 && interval >= 16666) || (frame % 6 >= 0 && interval >= 16667)){
-			if(frame % 6 < 2){
-				interval -= 16666;
-			}
-			else{
-				interval -= 16667;
-			}
+		if(interval >= FRAME_LEN){
+			interval -= FRAME_LEN;
 			frame ++;
 			while(keyevent_queue_gethead(keyqueue, &kev) == 0){
 				if(kev.frame < frame){
 					keyevent_queue_dequeue(keyqueue, &kev);
 					switch(kev.key){
 						case KEY_W:
-							if(kev.value == 1){
-								cubelist[user].velocity.y = mid(0, cubelist[user].velocity.y, MAX_SPEED);
-								cubelist[user].accel.y = MAX_ACCEL;
-							}
-							else{
-								if(cubelist[user].velocity.y > 0){
-									cubelist[user].accel.y = -MAX_ACCEL;
-								}
-							}
+							cube_set_accel(&cubelist[user], DIR_UP, kev.value);
 							break;
 						case KEY_S:
-							if(kev.value == 1){
-								cubelist[user].velocity.y = mid(-MAX_SPEED, cubelist[user].velocity.y, 0);
-								cubelist[user].accel.y = -MAX_ACCEL;
-							}
-							else{
-								if(cubelist[user].velocity.y < 0){
-									cubelist[user].accel.y = MAX_ACCEL;
-								}
-							}
+							cube_set_accel(&cubelist[user], DIR_DOWN, kev.value);
 							break;
 						case KEY_A:
-							if(kev.value == 1){
-								cubelist[user].velocity.x = mid(-MAX_SPEED, cubelist[user].velocity.x, 0);
-								cubelist[user].accel.x = -MAX_ACCEL;
-							}
-							else{
-								if(cubelist[user].velocity.x < 0){
-									cubelist[user].accel.x = MAX_ACCEL;
-								}
-							}
+							cube_set_accel(&cubelist[user], DIR_LEFT, kev.value);
 							break;
 						case KEY_D:
-							if(kev.value == 1){
-								cubelist[user].velocity.x = mid(0, cubelist[user].velocity.x, MAX_SPEED);
-								cubelist[user].accel.x = MAX_ACCEL;
-							}
-							else{
-								if(cubelist[user].velocity.x > 0){
-									cubelist[user].accel.x = -MAX_ACCEL;
-								}
-							}
+							cube_set_accel(&cubelist[user], DIR_RIGHT, kev.value);
 							break;
 						case KEY_ESC:
-							printlog(logfile, frame);
-							fprintf(logfile, "user %d: out ", user);
+							#ifdef LOGFILE
+							printlog(logfile, frame, "user %d: out ", user);
 							cube_print(logfile, cubelist[user]);
 							fprintf(logfile, "\n");
-							fflush(logfile);
+							#else
+							printf("user %d: out\n", user);
+							#endif
 							bufferevent_free(arg);
 							event_base_loopexit(bufferevent_get_base(arg), NULL);
+							pthread_mutex_unlock(&mtx);
+							return NULL;
 							break;
 					}
 				}
@@ -209,13 +183,21 @@ void *pkgThread(void *arg){
 			tmp = 0;
 			for(int i = 0; i < MAX_PLAYER; i++){
 				if(user_in[i] == 0) continue;
-				printlog(logfile, frame);
-				fprintf(logfile, "user %d: ", i);
-				cube_print(logfile, cubelist[i]);
-				fprintf(logfile, " -> ");
-				cube_stepforward(&cubelist[i], 1);
+				if(chazhi[i] == 0){
+					cube_stepforward(&cubelist[i], 1);
+				}
+				else{
+					cube_interpolation(&cubelist[i], &chazhidst[i], 1);
+					if(point_euclidean_distance(chazhidst[i].position, cubelist[i].position, 2) <= THRESHOLD){
+						chazhi[i] = 0;
+						cubelist[i] = chazhidst[i];
+					}
+				}
+				#ifdef LOGFILE
+				printlog(logfile, frame, "user %d: ", i);
 				cube_print(logfile, cubelist[i]);
 				fprintf(logfile, "\n");
+				#endif
 				tmp++;
 			}
 			if(frame % FRAMES_PER_UPDATE == 0){
@@ -227,10 +209,10 @@ void *pkgThread(void *arg){
 				*((cube *)&buf[6]) = cubelist[user];
 				j+= sizeof(cube);
 				evbuffer_add(bufferevent_get_output(arg), buf, 6 + sizeof(cube));
-				printlog(logfile, frame);
-				fprintf(logfile, "user %d update to server\n", user);
+				#ifdef LOGFILE
+				printlog(logfile, frame, "user %d update to server\n", user);
+				#endif
 			}
-			fflush(logfile);
 		}
 		pthread_mutex_unlock(&mtx);
 	}
@@ -261,13 +243,12 @@ void on_read(struct bufferevent *bev, void *arg){
 				j += sizeof(long int);
 				cubelist[user] = *((cube *)&buf[j]);
 				user_in[user] = 1;
-				printlog(logfile, frame);
-				fprintf(logfile, "user %d: in ", user);
+				#ifdef LOGFILE
+				printlog(logfile, frame, "user %d: in ", user);
 				cube_print(logfile, cubelist[user]);
 				fprintf(logfile, "\n");
-				fflush(logfile);
+				#endif
 				pthread_create(&disptid, NULL, RenderThread, NULL);
-				//pthread_create(&keytid, NULL, SendingThread, NULL);
 				pthread_create(&tid, NULL, pkgThread, bev);
 				pthread_mutex_unlock(&mtx);
 				break;
@@ -281,8 +262,9 @@ void on_read(struct bufferevent *bev, void *arg){
 				pthread_mutex_lock(&mtx);
 				memset(user_in, 0, sizeof(user_in));
 				user_in[user] = 1;
-				printlog(logfile, frame);
-				fprintf(logfile, "flush from server: sframe %08lX\n", sframe);
+				#ifdef LOGFILE
+				printlog(logfile, frame, "flush from server: sframe %08lX\n", sframe);
+				#endif
 				while(tmp--){
 					evbuffer_remove(input, buf, sizeof(cube) + 1);
 					if(buf[0] != user){
@@ -291,19 +273,19 @@ void on_read(struct bufferevent *bev, void *arg){
 							cube_stepforward(&tmpcube, frame - sframe);
 						}
 						else{
-							cube_stepforward(&cubelist[(int)buf[0]], sframe - frame);
+							if(!chazhi[(int)buf[0]]){
+								cube_stepforward(&cubelist[(int)buf[0]], sframe - frame);
+							}
+							else{
+								cube_interpolation(&cubelist[(int)buf[0]], &chazhidst[(int)buf[0]], sframe - frame);
+							}
 						}
-						cube_stepforward(&tmpcube, 5);
 						if(point_euclidean_distance(tmpcube.position, cubelist[(int)buf[0]].position, 2) > THRESHOLD){
-							float dx = tmpcube.position.x - cubelist[(int)buf[0]].position.x;
-							float dy = tmpcube.position.y - cubelist[(int)buf[0]].position.y;
-							float mm = max(abs(dx), abs(dy));
-							cubelist[(int)buf[0]].velocity.x = dx / mm * min(MAX_SPEED, mm / 5);
-							cubelist[(int)buf[0]].velocity.y = dy / mm * min(MAX_SPEED, mm / 5);
-							cubelist[(int)buf[0]].accel.x = 0.0f;
-							cubelist[(int)buf[0]].accel.y = 0.0f;
+							chazhi[(int)buf[0]] = 1;
+							chazhidst[(int)buf[0]] = tmpcube;
 						}
 						else{
+							chazhi[(int)buf[0]] = 0;
 							cubelist[(int)buf[0]] = *((cube *)&buf[1]);
 						}
 					}
@@ -323,11 +305,11 @@ void on_read(struct bufferevent *bev, void *arg){
 						*((cube *)&sendbuf[6]) = cubelist[user];
 						j+= sizeof(cube);
 						evbuffer_add(bufferevent_get_output(bev), sendbuf, 6 + sizeof(cube));
-						printlog(logfile, frame);
-						fprintf(logfile, "user %d update to server\n", user);
+						#ifdef LOGFILE
+						printlog(logfile, frame, "user %d update to server\n", user);
+						#endif
 					}
 				}
-				fflush(logfile);
 				pthread_mutex_unlock(&mtx);
 				break;
 		}
@@ -340,29 +322,27 @@ void on_event(struct bufferevent *bev, short event, void *arg){
 	char buf[MAXLEN];
 	if(event & BEV_EVENT_EOF){
 		pthread_mutex_lock(&mtx);
-		printlog(logfile, frame);
-		fprintf(logfile, "server down\n");
-		fflush(logfile);
+		#ifdef LOGFILE
+		printlog(logfile, frame, "server down\n");
+		#endif
 		bufferevent_free(bev);
-		pthread_cancel(disptid);
 		event_base_loopexit(base, NULL);
 		pthread_mutex_unlock(&mtx);
 	}
 	if(event & BEV_EVENT_ERROR){
 		pthread_mutex_lock(&mtx);
-		fprintf(logfile, "failed\n");
-		fflush(logfile);
+		#ifdef LOGFILE
+		printlog(logfile, frame, "connecting to server ... failed[ERROR]\n");
+		#endif
 		bufferevent_free(bev);
-		//event_base_loopexit(base, NULL);
+		event_base_loopexit(base, NULL);
 		pthread_mutex_unlock(&mtx);
-	}
-	if(event & BEV_EVENT_TIMEOUT){
-		printf("Timeout!\n");
 	}
 	if(event & BEV_EVENT_CONNECTED){
 		pthread_mutex_lock(&mtx);
-		fprintf(logfile, "successful\n");
-		fflush(logfile);
+		#ifdef LOGFILE
+		printlog(logfile, frame, "connecting to server ... successful\n");
+		#endif
 		buf[0] = CS_LOGIN;
 		buf[1] = user & 0xFF;
 		evbuffer_add(output, buf, 2);
@@ -376,37 +356,43 @@ int main(int argc,char* argv[]){
 	int fd;
 	struct sockaddr_in sin;
 
+	memset(chazhi, 0, sizeof(chazhi));
+
 	/*check if CLI is right*/
 	if(argc != 3){
 		printf("usage: %s <host> <0-3>\n", argv[0]);
 		return 1;
 	}
+	#ifdef LOGFILE
 	logfile = fopen("client.log", "w");
 	if(!logfile){
 		printf("Client Down!\n");
 		return 1;
 	}
+	#endif
 
 	/*new server address(argv[1])*/
-	printlog(logfile, frame);
-	fprintf(logfile, "checking host ... ");
 	memset(&sin, 0, sizeof(sin));
 	sin.sin_family = AF_INET;
 	sin.sin_port = htons(LISTEN_PORT);
 	fd = inet_pton(AF_INET, argv[1], &sin.sin_addr);
 	if(fd <= 0){
-		fprintf(logfile, "failed\n");
+		#ifdef LOGFILE
+		printlog(logfile, frame, "checking host ... failed\n");
 		fclose(logfile);
+		#endif
 		return 1;
 	}
-	fprintf(logfile, "successful\n");
+	#ifdef LOGFILE
+	printlog(logfile, frame, "checking host ... successful\n");
+	#endif
 
 	/*user(argv[2])*/
-	printlog(logfile, frame);
-	fprintf(logfile, "checking user ... ");
 	user = strtol(argv[2], NULL, 10);
 	memset(user_in, 0, sizeof(user_in));
-	fprintf(logfile, "%d\n", user);
+	#ifdef LOGFILE
+	printlog(logfile, frame, "checking user ... %d\n", user);
+	#endif
 
 	/*GL init*/
 	glutInit(&argc, argv);
@@ -415,37 +401,43 @@ int main(int argc,char* argv[]){
 	glutInitWindowSize(600, 400);
 
 	/*new event base*/
-	printlog(logfile, frame);
-	fprintf(logfile, "creating event base ... ");
 	base = event_base_new();
 	if(!base){
-		fprintf(logfile, "failed\n");
+		#ifdef LOGFILE
+		printlog(logfile, frame, "creating event base ... failed\n");
 		fclose(logfile);
+		#endif
 		return 1;
 	}
-	fprintf(logfile, "successful\n");
+	#ifdef LOGFILE
+	printlog(logfile, frame, "creating event base ... successful\n");
+	#endif
 
 	/*new buffer event*/
-	printlog(logfile, frame);
-	fprintf(logfile, "creating buffer event ... ");
 	bev = bufferevent_socket_new(base, -1, BEV_OPT_CLOSE_ON_FREE);
 	if(!bev){
-		fprintf(logfile, "failed\n");
+		#ifdef LOGFILE
+		printlog(logfile, frame, "creating buffer event ... failed\n");
 		fclose(logfile);
+		#endif
 		return 1;
 	}
-	fprintf(logfile, "successful\n");
+	#ifdef LOGFILE
+	printlog(logfile, frame, "creating buffer event ... successful\n");
+	#endif
 
 	/*new keyboard queue*/
-	printlog(logfile, frame);
-	fprintf(logfile, "creating keybord queue ... ");
 	keyqueue = keyevent_queue_new(1024);
 	if(!keyqueue){
-		fprintf(logfile, "failed\n");
+		#ifdef LOGFILE
+		printlog(logfile, frame, "creating keybord queue ... failed\n");
 		fclose(logfile);
+		#endif
 		return 1;
 	}
-	fprintf(logfile, "successful\n");
+	#ifdef LOGFILE
+	printlog(logfile, frame, "creating keybord queue ... successful\n");
+	#endif
 	
 	/*A thread that listen keybord*/
 	pthread_mutex_lock(&mtx);
@@ -457,12 +449,12 @@ int main(int argc,char* argv[]){
 	//pthread_create(&disptid, NULL, RenderThread, NULL);
 
 	/*Connect to server*/
-	printlog(logfile, frame);
-	fprintf(logfile, "connecting to server ... ");
 	fd = bufferevent_socket_connect(bev, (struct sockaddr*)&sin, sizeof(sin));
 	if(fd < 0){
-		fprintf(logfile, "failed\n");
+		#ifdef LOGFILE
+		printlog(logfile, frame, "connecting to server ... failed[FD]\n");
 		fclose(logfile);
+		#endif
 		bufferevent_free(bev);
 		return 1;
 	}
@@ -471,5 +463,9 @@ int main(int argc,char* argv[]){
 
 	/*start polling*/
 	event_base_dispatch(base);
+	#ifdef LOGFILE
+	fclose(logfile);
+	printf("logfile closed safely\n");
+	#endif
 	return 0;
 }

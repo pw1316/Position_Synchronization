@@ -9,6 +9,7 @@
 //#define UTIL_DEBUG
 //#define SERVER_DEBUG
 //#define CLIENT_DEBUG
+//#define LOGFILE
 
 /*Network*/
 #define LISTEN_PORT 23333
@@ -17,12 +18,13 @@
 /*Kinematics*/
 #define MAX_SPEED 2.0f
 #define MAX_ACCEL 0.3f
-#define DELTA_T 1
+#define DELTA_T 0.5f
 #define THRESHOLD 1
+#define FRAME_LEN 33333
 /*max number of players*/
 #define MAX_PLAYER 4
 /*how often CS communicate*/
-#define FRAMES_PER_UPDATE 5
+#define FRAMES_PER_UPDATE 2
 
 /*Message Types*/
 #define CS_LOGIN	0x80 //[1 OP][1 user]
@@ -43,7 +45,7 @@ typedef unsigned long int uint32;
 float max(float x, float y);
 float min(float x, float y);
 float mid(float x, float y, float z);
-void printlog(FILE *fp, uint32 frame);//Not thread safe
+void printlog(FILE *fp, uint32 frame, const char *format, ...);//Not thread safe
 
 /*====================================*/
 struct __point{
@@ -67,8 +69,14 @@ struct __cube{
 };
 typedef struct __cube cube;
 
-int cube_set_accel(cube *pkgptr, float x, float y);
+#define DIR_UP 0
+#define DIR_DOWN 1
+#define DIR_LEFT 2
+#define DIR_RIGHT 3
+
+int cube_set_accel(cube *cb, int dir, int value);
 void cube_stepforward(cube *c, int steps);
+void cube_interpolation(cube *src, cube *dst, int steps);
 void cube_print(FILE *fp, cube cb);
 
 /*====================================*/

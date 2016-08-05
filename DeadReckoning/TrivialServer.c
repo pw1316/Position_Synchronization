@@ -2,6 +2,7 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
@@ -27,7 +28,9 @@ long int interval = 0;
 pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
 pthread_t tid;
 /*Log*/
+#ifdef LOGFILE
 FILE *logfile = NULL;
+#endif
 
 void *pkgThread(void *arg){
 	struct timeval tv, tvold;
@@ -45,24 +48,19 @@ void *pkgThread(void *arg){
 		interval = interval + tmp;
 		tvold = tv;
 		pthread_mutex_lock(&mtx);
-		if((frame % 6 < 2 && interval >= 16666) || (frame % 6 >= 0 && interval >= 16667)){
-			if(frame % 6 < 2){
-				interval -= 16666;
-			}
-			else{
-				interval -= 16667;
-			}
+		if(interval >= FRAME_LEN){
+			interval -= FRAME_LEN;
 			frame ++;
 			tmp = 0;
 			for(int i = 0; i < MAX_PLAYER; i++){
 				if(user_bev[i] == NULL) continue;
-				printlog(logfile, frame);
-				fprintf(logfile, "user %d: ", i);
-				cube_print(logfile, cubelist[i]);
-				fprintf(logfile, " -> ");
 				cube_stepforward(&cubelist[i], 1);
+				#ifdef LOGFILE
+				printlog(logfile, frame, "user %d: ", i);
 				cube_print(logfile, cubelist[i]);
 				fprintf(logfile, "\n");
+				fflush(logfile);
+				#endif
 				tmp++;
 			}
 			if(frame % FRAMES_PER_UPDATE == 0){
@@ -79,16 +77,21 @@ void *pkgThread(void *arg){
 					*((cube *)&buf[j+1]) = cubelist[i];
 					j += sizeof(cube) + 1;
 				}
-				printlog(logfile, frame);
-				fprintf(logfile, "server flush to %d users", tmp);
+				#ifdef LOGFILE
+				printlog(logfile, frame, "server flush to %d users", tmp);
+				#endif
 				for(int i = 0; i < MAX_PLAYER; i++){
 					if(user_bev[i] == NULL) continue;
+					#ifdef LOGFILE
 					fprintf(logfile, " %d", i);
+					#endif
 					evbuffer_add(bufferevent_get_output(user_bev[i]), buf, j);
 				}
+				#ifdef LOGFILE
 				fprintf(logfile, "\n");
+				fflush(logfile);
+				#endif
 			}
-			fflush(logfile);
 		}
 		pthread_mutex_unlock(&mtx);
 	}
@@ -110,40 +113,47 @@ void on_read(struct bufferevent *bev, void *arg){
 				evbuffer_remove(input, buf, 1);
 				cuser = buf[0];
 				pthread_mutex_lock(&mtx);
-				printlog(logfile, frame);
 				if(user_bev[cuser]){
-					fprintf(logfile, "user %d: already in\n", cuser);
+					#ifdef LOGFILE
+					printlog(logfile, frame, "user %d: already in\n", cuser);
+					fflush(logfile);
+					#endif
 					bufferevent_free(bev);
 				}
 				else{
-					fprintf(logfile, "user %d: in ", cuser);
 					user_bev[cuser] = bev;
 					bufferevent_enable(bev, EV_READ|EV_WRITE);
 					sendbuf[0] = SC_CONFIRM;
 					*((uint32 *)&sendbuf[1]) = frame;
 					*((long int *)&sendbuf[5]) = interval;
 					*((cube *)&sendbuf[9]) = cubelist[cuser];
+					evbuffer_add(bufferevent_get_output(bev), sendbuf, sizeof(cube) + 9);
+					#ifdef LOGFILE
+					printlog(logfile, frame, "user %d: in ", cuser);
 					cube_print(logfile, cubelist[cuser]);
 					fprintf(logfile, "\n");
-					evbuffer_add(bufferevent_get_output(bev), sendbuf, sizeof(cube) + 9);
+					fflush(logfile);
+					#else
+					printf("user %d: in\n", cuser);
+					#endif
 				}
-				fflush(logfile);
 				pthread_mutex_unlock(&mtx);
 				break;
 			case CS_UPDATE:
 				flag = evbuffer_remove(input, buf, 5 + sizeof(cube));
 				pthread_mutex_lock(&mtx);
-				printlog(logfile, frame);
 				cframe = *((uint32 *)&buf[0]);
 				cuser = buf[4];
-				fprintf(logfile, "update from user %d: cframe %08lX, ", cuser, cframe);
+				#ifdef LOGFILE
+				printlog(logfile, frame, "update from user %d: cframe %08lX, ", cuser, cframe);
 				cube_print(logfile, *((cube *)&buf[5]));
 				fprintf(logfile, "\n");
+				fflush(logfile);
+				#endif
 				if(frame >= cframe){
 					cubelist[cuser] = *((cube *)&buf[5]);
 					cube_stepforward(&cubelist[cuser], frame - cframe);
 				}
-				fflush(logfile);
 				pthread_mutex_unlock(&mtx);
 				break;
 		}
@@ -151,7 +161,7 @@ void on_read(struct bufferevent *bev, void *arg){
 }
 
 void on_event(struct bufferevent *bev, short int event, void *arg){
-	int user;
+	int user = MAX_PLAYER;
 	pthread_mutex_lock(&mtx);
 	for(int i = 0; i < MAX_PLAYER; i++){
 		if(bev == user_bev[i]){
@@ -159,30 +169,28 @@ void on_event(struct bufferevent *bev, short int event, void *arg){
 			break;
 		}
 	}
+	assert(user < MAX_PLAYER);
 	pthread_mutex_unlock(&mtx);
-    if(event & (BEV_EVENT_EOF | BEV_EVENT_ERROR)){
-    	int fd, flag;
-        pthread_mutex_lock(&mtx);
-        printlog(logfile, frame);
-        fprintf(logfile, "user %d: out last status ", user);
-        cube_print(logfile, cubelist[user]);
-        fprintf(logfile, "\n");
-        fflush(logfile);
-        bufferevent_free(bev);
-        user_bev[user] = NULL;
-        fd = open("data.db", O_WRONLY);
-        lseek(fd, user * sizeof(cube), SEEK_SET);
-        flag = write(fd, (char *)&cubelist[user], sizeof(cube));
-        printf("%d\n", flag);
-        close(fd);
-        pthread_mutex_unlock(&mtx);
-    }
-    if(event & BEV_EVENT_TIMEOUT){
-        printf("  event:Timeout!\n");
-    }
-    if(event & BEV_EVENT_CONNECTED){
-        printf("  event:Connected.\n");
-    }
+	if(event & (BEV_EVENT_EOF | BEV_EVENT_ERROR)){
+		int fd, flag;
+		pthread_mutex_lock(&mtx);
+		#ifdef LOGFILE
+		printlog(logfile, frame, "user %d: out ", user);
+		cube_print(logfile, cubelist[user]);
+		fprintf(logfile, "\n");
+		fflush(logfile);
+		#else
+		printf("user %d: out ", user);
+		#endif
+		bufferevent_free(bev);
+		user_bev[user] = NULL;
+		fd = open("data.db", O_WRONLY);
+		lseek(fd, user * sizeof(cube), SEEK_SET);
+		flag = write(fd, (char *)&cubelist[user], sizeof(cube));
+		printf("%d\n", flag);
+		close(fd);
+		pthread_mutex_unlock(&mtx);
+	}
 }
 
 /*Connection Accepted*/
@@ -194,9 +202,12 @@ void on_acc(struct evconnlistener *listener, evutil_socket_t fd, struct sockaddr
 
 	inet_ntop(AF_INET, &sin->sin_addr, str, MAXLEN);
 	pthread_mutex_lock(&mtx);
-	printlog(logfile, frame);
-	fprintf(logfile, "ACK from %s: %d\n", str, ntohs(sin->sin_port));
+	#ifdef LOGFILE
+	printlog(logfile, frame, "ACK from %s: %d\n", str, ntohs(sin->sin_port));
 	fflush(logfile);
+	#else
+	printf("ACK from %s: %d\n", str, ntohs(sin->sin_port));
+	#endif
 	pthread_mutex_unlock(&mtx);
 	bufferevent_setcb(bev, on_read, NULL, on_event, arg);
 	bufferevent_enable(bev, EV_READ);
@@ -205,12 +216,13 @@ void on_acc(struct evconnlistener *listener, evutil_socket_t fd, struct sockaddr
 /*Accept Failed*/
 void on_acc_error(struct evconnlistener *listener, void *arg){
 	struct event_base *base = evconnlistener_get_base(listener);
+	#ifdef LOGFILE
 	int err = EVUTIL_SOCKET_ERROR();
 	pthread_mutex_lock(&mtx);
-	printlog(logfile, frame);
-	printf("error on ACK %d(%s)\n", err, evutil_socket_error_to_string(err));
+	printlog(logfile, frame, "error on ACK %d(%s)\n", err, evutil_socket_error_to_string(err));
 	fflush(logfile);
 	pthread_mutex_unlock(&mtx);
+	#endif
 	event_base_loopexit(base, NULL);
 }
 
@@ -220,28 +232,30 @@ int main(){
 	struct sockaddr_in sin;
 
 	memset(user_bev, 0, sizeof(user_bev));
+	#ifdef LOGFILE
 	logfile = fopen("server.log", "w");
 	if(!logfile){
 		printf("Server Down!\n");
 		return 1;
 	}
+	#endif
 	/*reading data from file*/
 	{
 		int fd,res,i;
 		char buf[MAXLEN];
-		printlog(logfile, frame);
-		fprintf(logfile, "opening ./data.db ... ");
 		fd = open("data.db", O_RDONLY);
 		if(fd < 0){
-			fprintf(logfile, "failed[No such file!]\n");
-			printlog(logfile, frame);
-			fprintf(logfile, "closing ...\n");
+			#ifdef LOGFILE
+			printlog(logfile, frame, "opening ./data.db ... failed[No such file!]\n");
+			printlog(logfile, frame, "closing ...\n");
 			fclose(logfile);
+			#endif
 			return 1;
 		}
-		fprintf(logfile, "successful\n");
-		printlog(logfile, frame);
-		fprintf(logfile, "reading from file ... ");
+		#ifdef LOGFILE
+		printlog(logfile, frame, "opening ./data.db ... successful\n");
+		#endif
+
 		i = 0;
 		while(1){
 			res = read(fd, buf, sizeof(cube));
@@ -255,25 +269,31 @@ int main(){
 			}
 		}
 		if(i < 4){
-			fprintf(logfile, "failed[No enough valid data!]\n");
+			#ifdef LOGFILE
+			printlog(logfile, frame, "reading from file ... failed[No enough valid data!]\n");
 			fclose(logfile);
+			#endif
 			close(fd);
 			return 1;
 		}
-		fprintf(logfile, "successful\n");
+		#ifdef LOGFILE
+		printlog(logfile, frame, "reading from file ... successful\n");
+		#endif
 		close(fd);
 	}
 
 	/*new event base*/
-	printlog(logfile, frame);
-	fprintf(logfile, "creating event base ... ");
 	base = event_base_new();
 	if(!base){
-		fprintf(logfile, "failed\n");
+		#ifdef LOGFILE
+		printlog(logfile, frame, "creating event base ... failed\n");
 		fclose(logfile);
+		#endif
 		return 1;
 	}
-	fprintf(logfile, "successful\n");
+	#ifdef LOGFILE
+	printlog(logfile, frame, "creating event base ... successful\n");
+	#endif
 
 	/*new listen address*/
 	memset(&sin, 0, sizeof(sin));
@@ -282,16 +302,18 @@ int main(){
 	sin.sin_port = htons(LISTEN_PORT);
 
 	/*new event listener*/
-	printlog(logfile, frame);
-	fprintf(logfile, "creating event listener ... ");
 	listener = evconnlistener_new_bind(base, on_acc, NULL, LEV_OPT_CLOSE_ON_FREE|LEV_OPT_REUSEABLE, 4, (struct sockaddr *)&sin, sizeof(sin));
 	if(!listener){
-		fprintf(logfile, "failed\n");
+		#ifdef LOGFILE
+		printlog(logfile, frame, "creating event listener ... failed\n");
 		fclose(logfile);
+		#endif
 		return 1;
 	}
-	fprintf(logfile, "successful[Listening fd: %d]\n", evconnlistener_get_fd(listener));
+	#ifdef LOGFILE
+	printlog(logfile, frame, "creating event listener ... successful[Listening fd: %d]\n", evconnlistener_get_fd(listener));
 	fflush(logfile);
+	#endif
 	evconnlistener_set_error_cb(listener, on_acc_error);
 	evconnlistener_enable(listener);
 	printf("Server Started...\n");

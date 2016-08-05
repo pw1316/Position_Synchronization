@@ -1,5 +1,7 @@
 #include "util.h"
+#include <assert.h>
 #include <math.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,14 +19,17 @@ float mid(float x, float y, float z){
 	return min(max(x, y), z);
 }
 
-void printlog(FILE *fp, uint32 frame){
+void printlog(FILE *fp, uint32 frame, const char *format, ...){
 	struct timeval tv;
 	char timestamp[MAXLEN];
-
+	va_list args;
+	va_start(args, format);
 	gettimeofday(&tv, NULL);
 	ctime_r(&tv.tv_sec, timestamp);
 	timestamp[strlen(timestamp) - 1] = '\0';
 	fprintf(fp, "[%s] frame %08lX | ", timestamp, frame);
+	vfprintf(fp, format, args);
+	va_end(args);
 }
 
 /*====================================*/
@@ -53,10 +58,53 @@ int point_intersect(point p1, point p2){
 }
 
 /*====================================*/
-int cube_set_accel(cube *pkgptr, float x, float y){
-	if(!pkgptr) return 1;
-	pkgptr->accel.x = x;
-	pkgptr->accel.y = y;
+int cube_set_accel(cube *cb, int dir, int value){
+	switch(dir){
+		case DIR_UP:
+			if(value == 1){
+				cb->velocity.y = mid(0, cb->velocity.y, MAX_SPEED);
+				cb->accel.y = MAX_ACCEL;
+			}
+			else{
+				if(cb->velocity.y > 0){
+					cb->accel.y = -MAX_ACCEL;
+				}
+			}
+			break;
+		case DIR_DOWN:
+			if(value == 1){
+				cb->velocity.y = mid(-MAX_SPEED, cb->velocity.y, 0);
+				cb->accel.y = -MAX_ACCEL;
+			}
+			else{
+				if(cb->velocity.y < 0){
+					cb->accel.y = MAX_ACCEL;
+				}
+			}
+			break;
+		case DIR_LEFT:
+			if(value == 1){
+				cb->velocity.x = mid(-MAX_SPEED, cb->velocity.x, 0);
+				cb->accel.x = -MAX_ACCEL;
+			}
+			else{
+				if(cb->velocity.x < 0){
+					cb->accel.x = MAX_ACCEL;
+				}
+			}
+			break;
+		case DIR_RIGHT:
+			if(value == 1){
+				cb->velocity.x = mid(0, cb->velocity.x, MAX_SPEED);
+				cb->accel.x = MAX_ACCEL;
+			}
+			else{
+				if(cb->velocity.x > 0){
+					cb->accel.x = -MAX_ACCEL;
+				}
+			}
+			break;
+	}
 	return 0;
 }
 
@@ -126,10 +174,59 @@ void cube_stepforward(cube *c, int steps){
 			}
 		}
 		/*accel change*/
-		c->accel.x = c->accel.x * (1 - MAX_ACCEL / (MAX_SPEED + 1));
-		c->accel.y = c->accel.y * (1 - MAX_ACCEL / (MAX_SPEED + 1));
+		c->accel.x = c->accel.x * (1 - MAX_ACCEL * DELTA_T / (MAX_SPEED + 1));
+		c->accel.y = c->accel.y * (1 - MAX_ACCEL * DELTA_T / (MAX_SPEED + 1));
 		steps--;
 	}
+}
+
+//#define INTERPOLATION_LINEAR
+#define INTERPOLATION_SPLINE
+
+void cube_interpolation(cube *src, cube *dst, int steps){
+	#ifdef INTERPOLATION_LINEAR
+	while(steps > 0){
+		float dx, dy, t;
+		cube_stepforward(dst, 1);
+		dx = dst->position.x - src->position.x;
+		dy = dst->position.y - src->position.y;
+		t = max(dx / MAX_SPEED, dy / MAX_SPEED);
+		if(t < 1){
+			*src = *dst;
+		}
+		else{
+			src->position.x = src->position.x * (1.0f - 1.0f / t) + dst->position.x * (1.0f / t);
+			src->position.y = src->position.y * (1.0f - 1.0f / t) + dst->position.y * (1.0f / t);
+			src->velocity = dst->velocity;
+			src->accel = dst->accel;
+		}
+		steps--;
+	}
+	#endif
+
+	#ifdef INTERPOLATION_SPLINE
+	while(steps > 0){
+		float ax, bx, cx, dx, xx1, xx2, vx1, vx2;
+		float ay, by, cy, dy, xy1, xy2, vy1, vy2;
+		float t;
+		cube cb = *dst;
+		cube_stepforward(&cb, 5);
+		cube_stepforward(dst, 1);
+		xx1 = src->position.x; xx2 = cb.position.x;
+		vx1 = src->velocity.x; vx2 = cb.velocity.x;
+		ax = 2 * (xx1 - xx2) + (vx1 - vx2); bx = 3 * (xx2 - xx1) + vx2 - 2 * vx1; cx = vx1; dx = xx1;
+		xy1 = src->position.y; xy2 = cb.position.y;
+		vy1 = src->velocity.y; vy2 = cb.velocity.y;
+		ay = 2 * (xy1 - xy2) + (vy1 - vy2); by = 3 * (xy2 - xy1) + vy2 - 2 * vy1; cy = vy1; dy = xy1;
+		t = 0.2;
+		src->position.x = ax * t * t * t + bx * t * t + cx * t + dx;
+		src->velocity.x = 3 * ax * t * t + 2 * bx * t + cx;
+		src->position.y = ay * t * t * t + by * t * t + cy * t + dy;
+		src->velocity.y = 3 * ay * t * t + 2 * by * t + cy;
+		src->accel = dst->accel;
+		steps--;
+	}
+	#endif
 }
 
 void cube_print(FILE *fp, cube cb){
