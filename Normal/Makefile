@@ -17,10 +17,12 @@ FLclient.o: FLclient.c util.h
 util.o: util.c util.h
 	gcc -c util.c -Wall -O1
 clean:
-	rm *.o
-	if [ -f "CC" ] then 
-		rm CC
-	fi
-	if [ -f "CC" ] then 
-		rm SS
+	if [ -f util.o ]; then \
+		rm *.o ;\
+	fi ;\
+	if [ -f CC ]; then \
+		rm CC ;\
+	fi ;\
+	if [ -f SS ]; then \
+		rm SS ;\
 	fi
