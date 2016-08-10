@@ -13,12 +13,11 @@
 #include <string.h>
 #include <unistd.h>
 
-//#include <event2/dns.h>
 #include <event2/event.h>
 #include <event2/buffer.h>
 #include <event2/bufferevent.h>
 
-#include <GL/glut.h>
+#include <GL/freeglut.h>
 
 #include "util.h"
 
@@ -27,6 +26,9 @@ byte user_in[MAX_PLAYER];
 cube cubelist[MAX_PLAYER];
 byte chazhi[MAX_PLAYER];
 cube chazhidst[MAX_PLAYER];
+byte myselfchazhi = 0;
+cube myselfchazhidst;
+cube myself;
 uint32 frame = 0;
 long int interval = 0;
 struct timeval tv, tvold;
@@ -41,6 +43,8 @@ FILE *logfile = NULL;
 #endif
 /*Key board*/
 keyevent_queue_ptr keyqueue = NULL;
+/*display*/
+int dispflag = 0;
 
 void display(){
 	usleep(1);
@@ -64,6 +68,13 @@ void display(){
 		glVertex3f(x + OBJ_WIDTH, y, 0);
 		glEnd();
 	}
+	glColor3f(0.8, 0.2, 0.0);
+	glBegin(GL_LINE_LOOP);
+	glVertex3f(myself.position.x + OBJ_WIDTH, myself.position.y + OBJ_WIDTH, 0);
+	glVertex3f(myself.position.x, myself.position.y + OBJ_WIDTH, 0);
+	glVertex3f(myself.position.x, myself.position.y, 0);
+	glVertex3f(myself.position.x + OBJ_WIDTH, myself.position.y, 0);
+	glEnd();
 	pthread_mutex_unlock(&mtx);
 	glFlush();
 	glutPostRedisplay();
@@ -160,6 +171,7 @@ void *pkgThread(void *arg){
 							printf("user %d: out\n", user);
 							#endif
 							bufferevent_free(arg);
+							glutLeaveMainLoop();
 							event_base_loopexit(bufferevent_get_base(arg), NULL);
 							pthread_mutex_unlock(&mtx);
 							return NULL;
@@ -189,6 +201,16 @@ void *pkgThread(void *arg){
 				fprintf(logfile, "\n");
 				#endif
 				tmp++;
+			}
+			if(myselfchazhi == 0){
+				cube_stepforward(&myself, 1);
+			}
+			else{
+				cube_interpolation(&myself, &myselfchazhidst, 1);
+				if(point_euclidean_distance(myselfchazhidst.position, myself.position, 2) <= THRESHOLD){
+					myselfchazhi = 0;
+					myself = myselfchazhidst;
+				}
 			}
 			if(frame % FRAMES_PER_UPDATE == 0){
 				char buf[MAXLEN];
@@ -234,6 +256,7 @@ void on_read(struct bufferevent *bev, void *arg){
 				cube_print(logfile, cubelist[user]);
 				fprintf(logfile, "\n");
 				#endif
+				dispflag = 1;
 				pthread_create(&disptid, NULL, RenderThread, NULL);
 				pthread_create(&tid, NULL, pkgThread, bev);
 				pthread_mutex_unlock(&mtx);
@@ -270,8 +293,31 @@ void on_read(struct bufferevent *bev, void *arg){
 						}
 						else{
 							chazhi[(int)buf[0]] = 0;
-							cubelist[(int)buf[0]] = *((cube *)&buf[1]);
+							cubelist[(int)buf[0]] = tmpcube;
 						}
+					}
+					else{
+						cube tmpcube = *((cube *)&buf[1]);
+						if(frame >= sframe){
+							cube_stepforward(&tmpcube, frame - sframe);
+						}
+						else{
+							if(!myselfchazhi){
+								cube_stepforward(&myself, sframe - frame);
+							}
+							else{
+								cube_interpolation(&myself, &myselfchazhidst, sframe - frame);
+							}
+						}
+						if(point_euclidean_distance(tmpcube.position, myself.position, 2) > THRESHOLD){
+							myselfchazhi = 1;
+							myselfchazhidst = tmpcube;
+						}
+						else{
+							myselfchazhi = 0;
+							myself = *((cube *)&buf[1]);
+						}
+						myself = tmpcube;
 					}
 					user_in[(int)buf[0]] = 1;
 				}
@@ -451,5 +497,8 @@ int main(int argc,char* argv[]){
 	fclose(logfile);
 	printf("logfile closed safely\n");
 	#endif
+	if(dispflag){
+		pthread_join(disptid, NULL);
+	}
 	return 0;
 }

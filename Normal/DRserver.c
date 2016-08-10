@@ -24,6 +24,7 @@ struct bufferevent *user_bev[MAX_PLAYER];
 cube cubelist[MAX_PLAYER];
 uint32 frame = 0;
 long int interval = 0;
+ring_buffer_ptr pbuffer;
 /*Multi-thread*/
 pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
 pthread_t tid = 0;
@@ -42,11 +43,11 @@ void *pkgThread(void *arg){
 	pthread_mutex_unlock(&mtx);
 	while(1){
 		usleep(1);
+		pthread_mutex_lock(&mtx);
 		gettimeofday(&tv, NULL);
 		tmp = (tv.tv_sec - tvold.tv_sec) * 1000000;
 		tmp = tmp + tv.tv_usec - tvold.tv_usec;
 		tvold = tv;
-		pthread_mutex_lock(&mtx);
 		interval = interval + tmp;
 		if(interval >= FRAME_LEN){
 			interval -= FRAME_LEN;
@@ -106,12 +107,19 @@ void on_read(struct bufferevent *bev, void *arg){
 	int cuser;
 
 	while(1){
-		flag = evbuffer_remove(input, buf, 1);
+		flag = evbuffer_remove(input, buf, MAXLEN);
 		if(flag <= 0) break;
-		switch((byte)buf[0]){
+		ring_buffer_enqueue(pbuffer, buf, flag);
+	}
+	printlog(stdout, 0, "read done\n");
+	while(1){
+		if(ring_buffer_isempty(pbuffer)) break;
+		byte c = pbuffer->buf[pbuffer->h];
+		switch(c){
 			case CS_LOGIN:
-				evbuffer_remove(input, buf, 1);
-				cuser = buf[0];
+				if(ring_buffer_used(pbuffer) < 2) break;
+				ring_buffer_dequeue(pbuffer, buf, 2);
+				cuser = buf[1];
 				pthread_mutex_lock(&mtx);
 				if(user_bev[cuser]){
 					#ifdef LOGFILE
@@ -138,17 +146,18 @@ void on_read(struct bufferevent *bev, void *arg){
 				pthread_mutex_unlock(&mtx);
 				break;
 			case CS_UPDATE:
-				flag = evbuffer_remove(input, buf, 5 + sizeof(cube));
+				if(ring_buffer_used(pbuffer) < 6 + sizeof(cube)) break;
+				ring_buffer_dequeue(pbuffer, buf, 6 + sizeof(cube));
 				pthread_mutex_lock(&mtx);
-				cframe = *((uint32 *)&buf[0]);
-				cuser = buf[4];
+				cframe = *((uint32 *)&buf[1]);
+				cuser = buf[5];
 				#ifdef LOGFILE
 				printlog(logfile, frame, "update from user %d: cframe %08lX, ", cuser, cframe);
-				cube_print(logfile, *((cube *)&buf[5]));
+				cube_print(logfile, *((cube *)&buf[6]));
 				fprintf(logfile, "\n");
 				#endif
 				if(frame >= cframe){
-					cubelist[cuser] = *((cube *)&buf[5]);
+					cubelist[cuser] = *((cube *)&buf[6]);
 					cube_stepforward(&cubelist[cuser], frame - cframe);
 				}
 				pthread_mutex_unlock(&mtx);
@@ -158,6 +167,7 @@ void on_read(struct bufferevent *bev, void *arg){
 		fflush(logfile);
 		#endif
 	}
+	printlog(stdout, 0, "process done\n");
 }
 
 void on_event(struct bufferevent *bev, short int event, void *arg){
@@ -313,6 +323,8 @@ int main(){
 	evconnlistener_set_error_cb(listener, on_acc_error);
 	evconnlistener_enable(listener);
 	printf("Server Started...\n");
+
+	pbuffer = ring_buffer_new(MAXLEN);
 
 	/*Thread to broadcast status*/
 	pthread_create(&tid, NULL, pkgThread, NULL);

@@ -23,7 +23,7 @@
 /*max number of players*/
 #define MAX_PLAYER 2
 /*how often CS communicate*/
-#define FRAMES_PER_UPDATE 1
+#define FRAMES_PER_UPDATE 5
 
 /*Message Types*/
 #define CS_LOGIN	0x80
@@ -42,8 +42,8 @@
 /*FL [1 OP][1 num][1 user][32 cube]...[1 user][32 cube]*/
 
 #define SC_FLUSH	0x84
-/*[1 OP][4 frame][4 interval][1 num][1 user][8 cube]...[1 user][8 cube]*/
-/*[1 OP][4 frame][1 user][keyevent]...[1 user][keyevent][1 all][endevent]*/
+/*DR [1 OP][4 frame][4 interval][1 num][1 user][8 cube]...[1 user][8 cube]*/
+/*FL [1 OP][4 frame][1 user][keyevent]...[1 user][keyevent][1 all][endevent]*/
 
 /*Graphyics*/
 #define MAX_HEIGHT 200
@@ -112,5 +112,25 @@ int keyevent_queue_isfull(keyevent_queue_ptr queue);
 int keyevent_queue_gethead(keyevent_queue_ptr queue, keyevent *event);
 int keyevent_queue_enqueue(keyevent_queue_ptr queue, keyevent *event);
 int keyevent_queue_dequeue(keyevent_queue_ptr queue, keyevent *event);
+
+/*====================================*/
+struct __ring_buffer{
+	uint32 size;
+	uint32 h;
+	uint32 r;
+	char *buf;
+};
+typedef struct __ring_buffer ring_buffer;
+typedef ring_buffer *ring_buffer_ptr;
+
+ring_buffer_ptr ring_buffer_new(uint32 size);//size is at least 5
+int ring_buffer_delete(ring_buffer_ptr buf);
+int ring_buffer_isempty(ring_buffer_ptr buf);
+int ring_buffer_isfull(ring_buffer_ptr buf);
+uint32 ring_buffer_used(ring_buffer_ptr buf);
+uint32 ring_buffer_left(ring_buffer_ptr buf);
+int ring_buffer_enqueue(ring_buffer_ptr buf, char *src, uint32 size);
+int ring_buffer_dequeue(ring_buffer_ptr buf, char *dst, uint32 size);
+void ring_buffer_print(FILE *fp, ring_buffer_ptr buf);
 
 #endif

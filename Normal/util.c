@@ -197,8 +197,8 @@ void cube_stepforward(cube *c, int steps){
 	}
 }
 
-//#define INTERPOLATION_LINEAR
-#define INTERPOLATION_SPLINE
+#define INTERPOLATION_LINEAR
+//#define INTERPOLATION_SPLINE
 
 void cube_interpolation(cube *src, cube *dst, int steps){
 	#ifdef INTERPOLATION_LINEAR
@@ -314,12 +314,115 @@ int keyevent_queue_dequeue(keyevent_queue_ptr queue, keyevent *event){
 	return 0;
 }
 
+/*====================================*/
+ring_buffer_ptr ring_buffer_new(uint32 size){
+	ring_buffer_ptr buf = (ring_buffer_ptr)malloc(sizeof(ring_buffer));
+	if(!buf) return NULL;
+	if(size < 5){
+		size = 5;
+	}
+	buf->size = size;
+	buf->h = buf->r = 0;
+	buf->buf = (char *)malloc(sizeof(char) * (size + 1));
+	if(!buf->buf){
+		free(buf);
+		return NULL;
+	}
+	return buf;
+}
+
+int ring_buffer_delete(ring_buffer_ptr buf){
+	if(!buf) return 0;
+	if(buf->buf){
+		free(buf->buf);
+	}
+	free(buf);
+	return 0;
+}
+
+int ring_buffer_isempty(ring_buffer_ptr buf){
+	assert(buf != NULL);
+	return (buf->h == buf->r)? 1:0;
+}
+
+int ring_buffer_isfull(ring_buffer_ptr buf){
+	assert(buf != NULL);
+	return ((buf->r + 1) % (buf->size + 1) == buf->h)? 1:0;
+}
+
+uint32 ring_buffer_used(ring_buffer_ptr buf){
+	assert(buf != NULL);
+	return (buf->r + buf->size + 1 - buf->h) % (buf->size + 1);
+}
+
+uint32 ring_buffer_left(ring_buffer_ptr buf){
+	assert(buf != NULL);
+	return buf->size - ring_buffer_used(buf);
+}
+
+int ring_buffer_enqueue(ring_buffer_ptr buf, char *src, uint32 size){
+	assert(buf != NULL);
+	assert(buf->buf != NULL);
+	assert(src != NULL);
+	if(ring_buffer_left(buf) >= size){
+		while(size--){
+			buf->buf[buf->r++] = *src++;
+			if(buf->r > buf->size){
+				buf->r = 0;
+			}
+		}
+		return 0;
+	}
+	else{
+		return 1;
+	}
+}
+
+int ring_buffer_dequeue(ring_buffer_ptr buf, char *dst, uint32 size){
+	assert(buf != NULL);
+	assert(buf->buf != NULL);
+	assert(dst != NULL);
+	if(ring_buffer_used(buf) >= size){
+		while(size--){
+			*dst++ = buf->buf[buf->h++];
+			if(buf->h > buf->size){
+				buf->h = 0;
+			}
+		}
+		return 0;
+	}
+	else{
+		return 1;
+	}
+}
+
+void ring_buffer_print(FILE *fp, ring_buffer_ptr buf){
+	assert(fp != NULL);
+	assert(buf != NULL);
+	assert(buf->buf != NULL);
+	uint32 t = buf->h;
+	while(t != buf->r){
+		fprintf(fp, "%02X ", buf->buf[t++]);
+		if(t > buf->size){
+			t = 0;
+		}
+	}
+	fprintf(fp, "\nh = %ld, r = %ld\n", buf->h, buf->r);
+}
+
 #ifdef UTIL_DEBUG
 
 int main(){
-	keyevent_queue_ptr ptr = NULL;
-	keyevent *kev = NULL;
-	keyevent_queue_dequeue(ptr, kev);
+	ring_buffer_ptr pbuffer = ring_buffer_new(MAXLEN);
+	char buf[MAXLEN];
+	memset(buf, 0, sizeof(buf));
+	ring_buffer_print(stdout, pbuffer);
+	ring_buffer_enqueue(pbuffer, buf, 6);
+	ring_buffer_print(stdout, pbuffer);
+	ring_buffer_enqueue(pbuffer, buf, 6);
+	ring_buffer_print(stdout, pbuffer);
+	ring_buffer_dequeue(pbuffer, buf, 6);
+	ring_buffer_print(stdout, pbuffer);
 }
 
 #endif
