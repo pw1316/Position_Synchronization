@@ -8,7 +8,7 @@
 //#define UTIL_DEBUG
 //#define SERVER_DEBUG
 //#define CLIENT_DEBUG
-#define LOGFILE
+//#define LOGFILE
 
 /*Network*/
 #define LISTEN_PORT 23333
@@ -19,11 +19,11 @@
 #define MAX_ACCEL 0.3f
 #define DELTA_T 1.0f
 #define THRESHOLD 1
-#define FRAME_LEN 33333
+#define FRAME_LEN 50000
 /*max number of players*/
 #define MAX_PLAYER 2
 /*how often CS communicate*/
-#define FRAMES_PER_UPDATE 5
+#define FRAMES_PER_UPDATE 1
 
 /*Message Types*/
 #define CS_LOGIN	0x80

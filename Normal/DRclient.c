@@ -1,6 +1,7 @@
 #include <arpa/inet.h>
 #include <linux/input.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/time.h>
@@ -213,6 +214,7 @@ void *pkgThread(void *arg){
 				}
 			}
 			if(frame % FRAMES_PER_UPDATE == 0){
+				printlog(stdout, 0, "write\n");
 				char buf[MAXLEN];
 				int j;
 				buf[0] = CS_UPDATE;
@@ -479,6 +481,7 @@ int main(int argc,char* argv[]){
 	//pthread_create(&disptid, NULL, RenderThread, NULL);
 
 	/*Connect to server*/
+	int opt = 1;
 	fd = bufferevent_socket_connect(bev, (struct sockaddr*)&sin, sizeof(sin));
 	if(fd < 0){
 		#ifdef LOGFILE
@@ -488,6 +491,7 @@ int main(int argc,char* argv[]){
 		bufferevent_free(bev);
 		return 1;
 	}
+	setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(int));
 	bufferevent_setcb(bev, on_read, NULL, on_event, NULL);
 	bufferevent_enable(bev, EV_READ|EV_WRITE);
 

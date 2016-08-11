@@ -1,5 +1,6 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <assert.h>
@@ -24,7 +25,6 @@ struct bufferevent *user_bev[MAX_PLAYER];
 cube cubelist[MAX_PLAYER];
 uint32 frame = 0;
 long int interval = 0;
-ring_buffer_ptr pbuffer;
 /*Multi-thread*/
 pthread_mutex_t mtx = PTHREAD_MUTEX_INITIALIZER;
 pthread_t tid = 0;
@@ -100,23 +100,34 @@ void *pkgThread(void *arg){
 }
 
 void on_read(struct bufferevent *bev, void *arg){
-	struct evbuffer *input = bufferevent_get_input(bev);
+	struct evbuffer *input = NULL;
 	char buf[MAXLEN];
 	int flag = 0;
 	uint32 cframe;
 	int cuser;
+	static int i = 0;
+	static ring_buffer_ptr pbuffer = NULL;
 
+	if(!pbuffer){
+		pbuffer = ring_buffer_new(MAXLEN);
+		printlog(stdout, 0, "only once, used:%ld\n", ring_buffer_used(pbuffer));
+	}
+	assert(pbuffer != NULL);
+	printlog(stdout, 0, "into on read\n");
+	input = bufferevent_get_input(bev);
 	while(1){
 		flag = evbuffer_remove(input, buf, MAXLEN);
+		printlog(stdout, 0, "flag = %d(%d)\n", flag, i++);
 		if(flag <= 0) break;
 		ring_buffer_enqueue(pbuffer, buf, flag);
 	}
-	printlog(stdout, 0, "read done\n");
+	printlog(stdout, 0, "read done, used:%ld\n", ring_buffer_used(pbuffer));
 	while(1){
 		if(ring_buffer_isempty(pbuffer)) break;
 		byte c = pbuffer->buf[pbuffer->h];
 		switch(c){
 			case CS_LOGIN:
+				printlog(stdout, 0, "CS_LOGIN\n");
 				if(ring_buffer_used(pbuffer) < 2) break;
 				ring_buffer_dequeue(pbuffer, buf, 2);
 				cuser = buf[1];
@@ -146,6 +157,7 @@ void on_read(struct bufferevent *bev, void *arg){
 				pthread_mutex_unlock(&mtx);
 				break;
 			case CS_UPDATE:
+				printlog(stdout, 0, "CS_UPDATE\n");
 				if(ring_buffer_used(pbuffer) < 6 + sizeof(cube)) break;
 				ring_buffer_dequeue(pbuffer, buf, 6 + sizeof(cube));
 				pthread_mutex_lock(&mtx);
@@ -167,7 +179,7 @@ void on_read(struct bufferevent *bev, void *arg){
 		fflush(logfile);
 		#endif
 	}
-	printlog(stdout, 0, "process done\n");
+	printlog(stdout, 0, "proccess done, used:%ld\n", ring_buffer_used(pbuffer));
 }
 
 void on_event(struct bufferevent *bev, short int event, void *arg){
@@ -208,8 +220,10 @@ void on_acc(struct evconnlistener *listener, evutil_socket_t fd, struct sockaddr
 	struct bufferevent *bev = bufferevent_socket_new(base, fd, BEV_OPT_CLOSE_ON_FREE);
 	struct sockaddr_in *sin = (struct sockaddr_in *)addr;
 	char str[MAXLEN];
+	int i = 1;
 
 	inet_ntop(AF_INET, &sin->sin_addr, str, MAXLEN);
+	setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &i, sizeof(i));
 	pthread_mutex_lock(&mtx);
 	#ifdef LOGFILE
 	printlog(logfile, frame, "ACK from %s: %d\n", str, ntohs(sin->sin_port));
@@ -324,10 +338,8 @@ int main(){
 	evconnlistener_enable(listener);
 	printf("Server Started...\n");
 
-	pbuffer = ring_buffer_new(MAXLEN);
-
 	/*Thread to broadcast status*/
-	pthread_create(&tid, NULL, pkgThread, NULL);
+	//pthread_create(&tid, NULL, pkgThread, NULL);
 
 	/*start polling*/
 	event_base_dispatch(base);

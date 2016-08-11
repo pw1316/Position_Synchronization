@@ -7,15 +7,15 @@ FL: FLserver.o FLclient.o util.o
 UTIL: util.o
 	gcc -o SS util.o -lm
 DRserver.o: DRserver.c util.h
-	gcc -c DRserver.c -Wall -O1
+	gcc -c DRserver.c -Wall -O1 -ggdb3
 DRclient.o: DRclient.c util.h
-	gcc -c DRclient.c -Wall -O1
+	gcc -c DRclient.c -Wall -O1 -ggdb3
 FLserver.o: FLserver.c util.h
-	gcc -c FLserver.c -Wall -O1
+	gcc -c FLserver.c -Wall -O1 -ggdb3
 FLclient.o: FLclient.c util.h
-	gcc -c FLclient.c -Wall -O1
+	gcc -c FLclient.c -Wall -O1 -ggdb3
 util.o: util.c util.h
-	gcc -c util.c -Wall -O1
+	gcc -c util.c -Wall -O1 -ggdb3
 clean:
 	if [ -f util.o ]; then \
 		rm *.o ;\
