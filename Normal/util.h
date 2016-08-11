@@ -19,7 +19,7 @@
 #define MAX_ACCEL 0.3f
 #define DELTA_T 1.0f
 #define THRESHOLD 1
-#define FRAME_LEN 50000
+#define FRAME_LEN 1000000
 /*max number of players*/
 #define MAX_PLAYER 2
 /*how often CS communicate*/
