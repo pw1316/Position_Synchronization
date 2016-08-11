@@ -154,6 +154,7 @@ void *pkgThread(void *arg){
 		tmp = (tv.tv_sec - tvold.tv_sec) * 1000000;
 		tmp = tmp + tv.tv_usec - tvold.tv_usec;
 		interval = interval + tmp;
+		printlog(stdout, 0, "%d\n", interval);
 		tvold = tv;
 		if(interval >= FRAME_LEN){
 			interval -= FRAME_LEN;
