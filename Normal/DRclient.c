@@ -223,7 +223,7 @@ void *pkgThread(void *arg){
 				*((cube *)&buf[6]) = cubelist[user];
 				j+= sizeof(cube);
 				flag = bufferevent_write(arg, buf, 6 + sizeof(cube));
-				printlog(stdout, 0, "write %d\n", flag);
+				printlog(stdout, 0, "write %d:%d\n", flag, evbuffer_get_length(bufferevent_get_output(arg)));
 				#ifdef LOGFILE
 				printlog(logfile, frame, "user %d update to server\n", user);
 				#endif
