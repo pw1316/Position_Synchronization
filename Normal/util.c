@@ -197,8 +197,8 @@ void cube_stepforward(cube *c, int steps){
 	}
 }
 
-#define INTERPOLATION_LINEAR
-//#define INTERPOLATION_SPLINE
+//#define INTERPOLATION_LINEAR
+#define INTERPOLATION_SPLINE
 
 void cube_interpolation(cube *src, cube *dst, int steps){
 	#ifdef INTERPOLATION_LINEAR

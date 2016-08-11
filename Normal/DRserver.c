@@ -85,7 +85,8 @@ void *pkgThread(void *arg){
 					#ifdef LOGFILE
 					fprintf(logfile, " %d", i);
 					#endif
-					evbuffer_add(bufferevent_get_output(user_bev[i]), buf, j);
+					send(bufferevent_getfd(user_bev[i]), buf, j, 0);
+					//evbuffer_add(bufferevent_get_output(user_bev[i]), buf, j);
 				}
 				#ifdef LOGFILE
 				fprintf(logfile, "\n");
@@ -105,23 +106,18 @@ void on_read(struct bufferevent *bev, void *arg){
 	int flag = 0;
 	uint32 cframe;
 	int cuser;
-	static int i = 0;
 	static ring_buffer_ptr pbuffer = NULL;
 
 	if(!pbuffer){
 		pbuffer = ring_buffer_new(MAXLEN);
-		printlog(stdout, 0, "only once, used:%ld\n", ring_buffer_used(pbuffer));
 	}
 	assert(pbuffer != NULL);
-	printlog(stdout, 0, "into on read\n");
 	input = bufferevent_get_input(bev);
 	while(1){
 		flag = evbuffer_remove(input, buf, MAXLEN);
-		printlog(stdout, 0, "flag = %d(%d)\n", flag, i++);
 		if(flag <= 0) break;
 		ring_buffer_enqueue(pbuffer, buf, flag);
 	}
-	printlog(stdout, 0, "read done, used:%ld\n", ring_buffer_used(pbuffer));
 	while(1){
 		if(ring_buffer_isempty(pbuffer)) break;
 		byte c = pbuffer->buf[pbuffer->h];
@@ -145,7 +141,8 @@ void on_read(struct bufferevent *bev, void *arg){
 					*((uint32 *)&buf[1]) = frame;
 					*((long int *)&buf[5]) = interval;
 					*((cube *)&buf[9]) = cubelist[cuser];
-					evbuffer_add(bufferevent_get_output(bev), buf, sizeof(cube) + 9);
+					send(bufferevent_getfd(bev), buf, sizeof(cube) + 9, 0);
+					//evbuffer_add(bufferevent_get_output(bev), buf, sizeof(cube) + 9);
 					#ifdef LOGFILE
 					printlog(logfile, frame, "user %d: in ", cuser);
 					cube_print(logfile, cubelist[cuser]);
@@ -179,7 +176,6 @@ void on_read(struct bufferevent *bev, void *arg){
 		fflush(logfile);
 		#endif
 	}
-	printlog(stdout, 0, "proccess done, used:%ld\n", ring_buffer_used(pbuffer));
 }
 
 void on_event(struct bufferevent *bev, short int event, void *arg){
@@ -339,7 +335,7 @@ int main(){
 	printf("Server Started...\n");
 
 	/*Thread to broadcast status*/
-	//pthread_create(&tid, NULL, pkgThread, NULL);
+	pthread_create(&tid, NULL, pkgThread, NULL);
 
 	/*start polling*/
 	event_base_dispatch(base);

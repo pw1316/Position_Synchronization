@@ -222,9 +222,9 @@ void *pkgThread(void *arg){
 				buf[5] = user & 0xFF;
 				*((cube *)&buf[6]) = cubelist[user];
 				j+= sizeof(cube);
-				flag = bufferevent_write(arg, buf, 6 + sizeof(cube));
-				bufferevent_flush(arg, EV_WRITE, 2);
-				printlog(stdout, 0, "write %d:%d\n", flag, evbuffer_get_length(bufferevent_get_output(arg)));
+				//flag = bufferevent_write(arg, buf, 6 + sizeof(cube));
+				//bufferevent_flush(arg, EV_WRITE, 2);
+				flag = send(bufferevent_getfd(arg), buf, 6 + sizeof(cube), 0);
 				#ifdef LOGFILE
 				printlog(logfile, frame, "user %d update to server\n", user);
 				#endif
@@ -319,9 +319,8 @@ void on_read(struct bufferevent *bev, void *arg){
 						}
 						else{
 							myselfchazhi = 0;
-							myself = *((cube *)&buf[1]);
+							myself = tmpcube;
 						}
-						myself = tmpcube;
 					}
 					user_in[(int)buf[0]] = 1;
 				}
@@ -387,8 +386,8 @@ void on_event(struct bufferevent *bev, short event, void *arg){
 int main(int argc,char* argv[]){
 	struct event_base *base;
 	struct bufferevent *bev;
-	int fd;
 	struct sockaddr_in sin;
+	int fd;
 
 	memset(chazhi, 0, sizeof(chazhi));
 
@@ -493,7 +492,7 @@ int main(int argc,char* argv[]){
 		bufferevent_free(bev);
 		return 1;
 	}
-	setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(int));
+	setsockopt(bufferevent_getfd(bev), IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(int));
 	bufferevent_setcb(bev, on_read, NULL, on_event, NULL);
 	bufferevent_enable(bev, EV_READ|EV_WRITE);
 
