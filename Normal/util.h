@@ -15,15 +15,15 @@
 #define MAXLEN 4096
 
 /*Kinematics*/
-#define MAX_SPEED 2.0f
-#define MAX_ACCEL 0.3f
+#define MAX_SPEED 5.0f
+#define MAX_ACCEL 1.0f
 #define DELTA_T 1.0f
 #define THRESHOLD 1
-#define FRAME_LEN 1000000
+#define FRAME_LEN 100000
 /*max number of players*/
 #define MAX_PLAYER 2
 /*how often CS communicate*/
-#define FRAMES_PER_UPDATE 1
+#define FRAMES_PER_UPDATE 5
 
 /*Message Types*/
 #define CS_LOGIN	0x80
