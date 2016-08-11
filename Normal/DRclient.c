@@ -214,15 +214,16 @@ void *pkgThread(void *arg){
 				}
 			}
 			if(frame % FRAMES_PER_UPDATE == 0){
-				printlog(stdout, 0, "write\n");
 				char buf[MAXLEN];
+				int flag;
 				int j;
 				buf[0] = CS_UPDATE;
 				*((uint32 *)&buf[1]) = frame;
 				buf[5] = user & 0xFF;
 				*((cube *)&buf[6]) = cubelist[user];
 				j+= sizeof(cube);
-				bufferevent_write(arg, buf, 6 + sizeof(cube));
+				flag = bufferevent_write(arg, buf, 6 + sizeof(cube));
+				printlog(stdout, 0, "write %d\n", flag);
 				#ifdef LOGFILE
 				printlog(logfile, frame, "user %d update to server\n", user);
 				#endif
