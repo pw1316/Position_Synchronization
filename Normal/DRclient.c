@@ -154,7 +154,6 @@ void *pkgThread(void *arg){
 		tmp = (tv.tv_sec - tvold.tv_sec) * 1000000;
 		tmp = tmp + tv.tv_usec - tvold.tv_usec;
 		interval = interval + tmp;
-		printlog(stdout, 0, "%d\n", interval);
 		tvold = tv;
 		if(interval >= FRAME_LEN){
 			interval -= FRAME_LEN;
@@ -223,7 +222,7 @@ void *pkgThread(void *arg){
 				buf[5] = user & 0xFF;
 				*((cube *)&buf[6]) = cubelist[user];
 				j+= sizeof(cube);
-				evbuffer_add(bufferevent_get_output(arg), buf, 6 + sizeof(cube));
+				bufferevent_write(arg, buf, 6 + sizeof(cube));
 				#ifdef LOGFILE
 				printlog(logfile, frame, "user %d update to server\n", user);
 				#endif
