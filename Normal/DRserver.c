@@ -123,7 +123,6 @@ void on_read(struct bufferevent *bev, void *arg){
 		byte c = pbuffer->buf[pbuffer->h];
 		switch(c){
 			case CS_LOGIN:
-				printlog(stdout, 0, "CS_LOGIN\n");
 				if(ring_buffer_used(pbuffer) < 2) break;
 				ring_buffer_dequeue(pbuffer, buf, 2);
 				cuser = buf[1];
@@ -154,7 +153,6 @@ void on_read(struct bufferevent *bev, void *arg){
 				pthread_mutex_unlock(&mtx);
 				break;
 			case CS_UPDATE:
-				printlog(stdout, 0, "CS_UPDATE\n");
 				if(ring_buffer_used(pbuffer) < 6 + sizeof(cube)) break;
 				ring_buffer_dequeue(pbuffer, buf, 6 + sizeof(cube));
 				pthread_mutex_lock(&mtx);

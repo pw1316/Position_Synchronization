@@ -187,6 +187,7 @@ void on_read(struct bufferevent *bev, void *arg){
 	keyevent kev;
 
 	while(1){
+		usleep(100000);
 		int j;
 		flag = evbuffer_remove(input, buf, 1);
 		if(flag <= 0) break;
